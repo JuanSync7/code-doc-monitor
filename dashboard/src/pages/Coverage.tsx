@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useApi } from "../hooks/useApi";
@@ -80,7 +80,10 @@ export function Coverage({ api = apiClient, repoId: repoIdProp }: CoverageProps)
         Coverage: <span className="repo-id">{repoId}</span>
       </h1>
 
-      <p className="coverage-pct">
+      <p
+        className="coverage-pct"
+        style={{ "--ratio": latest.ratio ?? 0 } as CSSProperties}
+      >
         <strong>{formatPct(latest.ratio)}</strong> documented
       </p>
 

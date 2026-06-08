@@ -999,6 +999,164 @@ tbody th {
   color: var(--text);
 }
 
+/* ── Health telemetry: KPI metric grid ─────────────────────────────────── */
+/* The bare <dl> becomes a responsive grid of metric cards (the same card    */
+/* language as the fleet overview), so the numbers read as instruments —     */
+/* not as loose label/value text floating on the page.                       */
+.health-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
+  margin: 0;
+}
+.health-stats .stat-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  padding: 1.1rem 1.2rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  animation: rise 0.45s both;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+.health-stats .stat-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
+}
+.health-stats .stat-card dt {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.health-stats .stat-card dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+/* Semantic tone per metric — drift signals red, recoveries green. */
+.health-stats .stat-card dd[data-testid="stat-escalations"],
+.health-stats .stat-card dd[data-testid="stat-escalation-rate"],
+.health-stats .stat-card dd[data-testid="stat-unresolved"] {
+  color: var(--drift);
+}
+.health-stats .stat-card dd[data-testid="stat-resolved"] {
+  color: var(--sync);
+}
+.health-stats .stat-card dd[data-testid="stat-overrides"] {
+  color: var(--review);
+}
+
+/* ── Coverage hero: the headline % as an instrument, with a fill track ──── */
+.coverage-pct {
+  position: relative;
+  margin: 0 0 0.95rem;
+  padding: 1.4rem 1.5rem 1.6rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  animation: rise 0.45s both;
+}
+.coverage-pct strong {
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-strong);
+  text-transform: none;
+}
+/* A soft fill track pinned to the card's bottom edge, width = ratio. */
+.coverage-pct::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: var(--surface-3);
+}
+.coverage-pct::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: calc(var(--ratio, 0) * 100%);
+  background: linear-gradient(90deg, var(--primary), var(--primary-strong));
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+}
+
+/* The three baskets — a compact metric grid with semantic-coloured counts. */
+.coverage-baskets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 0 0 0.4rem;
+}
+.coverage-baskets > div {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  padding: 1rem 1.15rem 1.05rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.coverage-baskets dt {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.coverage-baskets dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.85rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.coverage-baskets dd.basket-documented {
+  color: var(--sync);
+}
+.coverage-baskets dd.basket-undocumented {
+  color: var(--drift);
+}
+.coverage-baskets dd.basket-waived {
+  color: var(--review);
+}
+
 /* ── coverage file list ────────────────────────────────────────────────── */
 .coverage-files {
   margin-top: 1.7rem;
