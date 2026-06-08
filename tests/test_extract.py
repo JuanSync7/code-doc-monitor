@@ -765,3 +765,80 @@ def test_fingerprint_is_frozen() -> None:
     fp = SurfaceFingerprint(signature="a", docstring=None, body=None, composite="a")
     with pytest.raises(ValidationError):
         fp.signature = "b"  # type: ignore[misc]
+
+
+# --------------------------------------------------------------------------- #
+# P-03: symbol extraction routes through the registry by language (K0)         #
+# --------------------------------------------------------------------------- #
+class _ToySymbolExtractor:
+    """A non-Python stub symbol extractor — proves a new language is a mere
+    registration, never an engine edit (K0). It ignores file content."""
+
+    language = "toy"
+
+    def extract(self, path: Path) -> list[Symbol]:
+        return [
+            Symbol(
+                name="toy_fn",
+                kind="function",
+                signature="fn toy_fn()",
+                lineno=1,
+                end_lineno=1,
+                is_public=True,
+                docstring=None,
+            )
+        ]
+
+
+def _unregister_toy() -> None:
+    from code_doc_monitor.extract import _EXTRACTORS, _SYMBOL_LANG_BY_SUFFIX
+
+    _EXTRACTORS.pop("toy", None)
+    _SYMBOL_LANG_BY_SUFFIX.pop(".toy", None)
+
+
+def test_symbols_for_ref_routes_by_explicit_lang(tmp_path: Path) -> None:
+    (tmp_path / "x.toy").write_text("anything", encoding="utf-8")
+    try:
+        register_extractor(_ToySymbolExtractor(), suffixes=(".toy",))
+        doc = _doc(Audience.ENG_GUIDE, CodeRef(path="x.toy", lang="toy"))
+        surface = build_document_surface(doc, tmp_path)
+        assert [s.name for s in surface.symbols] == ["toy_fn"]
+    finally:
+        _unregister_toy()
+
+
+def test_symbols_auto_infers_registered_suffix(tmp_path: Path) -> None:
+    (tmp_path / "y.toy").write_text("anything", encoding="utf-8")
+    try:
+        register_extractor(_ToySymbolExtractor(), suffixes=(".toy",))
+        doc = _doc(Audience.ENG_GUIDE, CodeRef(path="y.toy"))  # lang defaults to auto
+        surface = build_document_surface(doc, tmp_path)
+        assert [s.name for s in surface.symbols] == ["toy_fn"]
+    finally:
+        _unregister_toy()
+
+
+def test_register_extractor_maps_suffix() -> None:
+    try:
+        register_extractor(_ToySymbolExtractor(), suffixes=(".toy",))
+        from code_doc_monitor.extract import _SYMBOL_LANG_BY_SUFFIX
+
+        assert _SYMBOL_LANG_BY_SUFFIX[".toy"] == "toy"
+    finally:
+        _unregister_toy()
+
+
+def test_symbols_unknown_language_raises(tmp_path: Path) -> None:
+    (tmp_path / "z.py").write_text("x = 1\n", encoding="utf-8")
+    doc = _doc(Audience.ENG_GUIDE, CodeRef(path="z.py", lang="rust"))
+    with pytest.raises(ExtractionError):
+        build_document_surface(doc, tmp_path)
+
+
+def test_symbols_python_still_default_for_auto(tmp_path: Path) -> None:
+    """Back-compat: a .py ref with lang=auto still uses the python extractor."""
+    _write(tmp_path)
+    doc = _doc(Audience.ENG_GUIDE, CodeRef(path="sample.py"))
+    surface = build_document_surface(doc, tmp_path)
+    assert "foo" in {s.name for s in surface.symbols}

@@ -400,11 +400,15 @@ class Extractor(Protocol):
 
 class PythonAstExtractor:            # the default; AST-only, import-free (K0)
     language = "python"
-def register_extractor(extractor: Extractor) -> None
+def register_extractor(extractor: Extractor, *, suffixes: tuple[str, ...] = ()) -> None
+    # P3: also maps each suffix → extractor.language for `lang: auto` symbol refs
 def get_extractor(language: str) -> Extractor      # loud on unknown language (K8)
 
 def extract_file(path: Path) -> list[Symbol]       # thin wrapper → get_extractor("python")
 def build_document_surface(doc: DocumentSpec, root: Path) -> DocumentSurface
+# P3: symbol extraction routes through the registry by CodeRef.lang — `_symbols_for_ref`
+# resolves get_extractor(lang), lang = ref.lang or (auto → suffix map, default "python").
+# A new language is a register_extractor() call, NEVER an engine edit (proves K0).
 ```
 Audience filter: `user-guide` keeps only `is_public` symbols and EXCLUDES
 docstring/comment text and `variable` locals from the hash; `eng-guide` keeps all

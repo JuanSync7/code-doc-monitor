@@ -135,7 +135,13 @@ class CodeRef(BaseModel):
     names: tuple[str, ...] = ()  # named module-level variables
     arg_signature: tuple[str, ...] = ()  # functions with exactly these params
     extract: Literal["symbols", "switches", "records"] = "symbols"
-    lang: Literal["auto", "python", "shell", "tcl", "json"] = "auto"
+    # P3: open string (was a closed Literal) so a SYMBOL ref can name any
+    # language registered via `extract.register_extractor` — a new language is a
+    # registration, not an engine/schema edit (K0). "auto" infers from the file
+    # suffix. Unknown languages stay loud, but at extraction time (K8,
+    # `get_extractor`) rather than config-load. The built-in switch/record
+    # parsers still recognize only python/shell/tcl/json.
+    lang: str = "auto"
     json_records: str | None = None  # list-valued key, or "*"
     record_name_field: str = "name"  # which json field identifies a row
 

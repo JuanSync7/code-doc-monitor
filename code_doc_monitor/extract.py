@@ -539,10 +539,23 @@ class PythonAstExtractor:
 # languages register through :func:`register_extractor` (P-03).
 _EXTRACTORS: dict[str, Extractor] = {"python": PythonAstExtractor()}
 
+# suffix -> language, for resolving a ``symbols`` ref whose ``lang`` is ``auto``
+# (P3). Extractors self-describe their extensions via ``register_extractor``; the
+# engine holds no language list of its own beyond the Python default (K0).
+_SYMBOL_LANG_BY_SUFFIX: dict[str, str] = {".py": "python"}
 
-def register_extractor(extractor: Extractor) -> None:
-    """Register (or override) the extractor for ``extractor.language`` (K0)."""
+
+def register_extractor(extractor: Extractor, *, suffixes: tuple[str, ...] = ()) -> None:
+    """Register (or override) the extractor for ``extractor.language`` (K0).
+
+    ``suffixes`` (P3) additionally maps each file extension (e.g. ``".rs"``) to
+    ``extractor.language`` so a ``symbols`` ref with ``lang: auto`` resolves to
+    this extractor by file suffix. Registering a new language is the ONLY step to
+    support it — no engine control flow changes (proves K0).
+    """
     _EXTRACTORS[extractor.language] = extractor
+    for suffix in suffixes:
+        _SYMBOL_LANG_BY_SUFFIX[suffix] = extractor.language
 
 
 def get_extractor(language: str) -> Extractor:
@@ -847,9 +860,23 @@ def _select(
     return list(selected.values())
 
 
+def _symbol_language(ref: CodeRef) -> str:
+    """Resolve the extractor language for a ``symbols`` ref (P3, K0).
+
+    An explicit ``ref.lang`` wins; ``auto`` infers from the file suffix via the
+    registry's suffix map, defaulting to ``"python"`` (the pre-P3 behaviour for
+    every symbol ref). The chosen language is resolved through
+    :func:`get_extractor`, so an unregistered one is loud (K8).
+    """
+    if ref.lang != "auto":
+        return ref.lang
+    return _SYMBOL_LANG_BY_SUFFIX.get(Path(ref.path).suffix, "python")
+
+
 def _symbols_for_ref(ref: CodeRef, root: Path) -> list[Symbol]:
-    """The selected Python symbols a ``symbols`` ref contributes."""
-    file_symbols = extract_file(root / ref.path)
+    """The selected symbols a ``symbols`` ref contributes, via the registry (P3)."""
+    extractor = get_extractor(_symbol_language(ref))
+    file_symbols = extractor.extract(root / ref.path)
     if ref.arg_signature:
         wanted = tuple(ref.arg_signature)
         file_symbols = [

@@ -1,13 +1,13 @@
 ---
 cdm:
   audience: eng-guide
-  fingerprint: 8ec81ef7b48e4378
+  fingerprint: 862d8db0d10db370
   fingerprint_tiers:
-    composite: 8ec81ef7b48e4378
-    docstring: ed756faf43514f47
-    signature: 55ef06588c64967b
+    composite: 862d8db0d10db370
+    docstring: 9eed918b3aed6f2a
+    signature: 81832b56521f172f
   region_hashes:
-    symbols: e0d6373f59fd447b
+    symbols: 2bf97b796af45ef3
   schema_version: 1.0.0
 ---
 # code-doc-monitor — pipeline (engineering reference)
@@ -47,6 +47,7 @@ cdm:
 | _SH_GETOPTS | variable | _SH_GETOPTS = ... |
 | _SUFFIX_LANG | variable | _SUFFIX_LANG = ... |
 | _SWITCHLIKE | variable | _SWITCHLIKE = re.compile('^--?[A-Za-z][\\\\w-]*$') |
+| _SYMBOL_LANG_BY_SUFFIX | variable | _SYMBOL_LANG_BY_SUFFIX: dict[str, str] = {'.py': 'python'} |
 | _TCL_ARGV_BLOCK | variable | _TCL_ARGV_BLOCK = ... |
 | _TCL_REGEXP_CLASS | variable | _TCL_REGEXP_CLASS = ... |
 | _TCL_SWITCH | variable | _TCL_SWITCH = re.compile('\\\\n\\\\s*\\\\^(-\\\\w[\\\\w-]*)') |
@@ -75,6 +76,7 @@ cdm:
 | _short_diff | function | def _short_diff(expected: str, actual: str, region_id: str) -> str |
 | _switch_strings | function | def _switch_strings(node: ast.AST) -> list[str] |
 | _symbol_cell | function | def _symbol_cell(col: RegionColumn, sym: Symbol) -> str |
+| _symbol_language | function | def _symbol_language(ref: CodeRef) -> str |
 | _symbols_for_ref | function | def _symbols_for_ref(ref: CodeRef, root: Path) -> list[Symbol] |
 | _tcl_switches | function | def _tcl_switches(text: str) -> set[str] |
 | _value_repr | function | def _value_repr(node: ast.expr) -> str |
@@ -93,7 +95,7 @@ cdm:
 | region_body_hash | function | def region_body_hash(body: str) -> str |
 | region_is_locked | function | def region_is_locked(doc: Doc, region_id: str, current_body: str) -> bool |
 | regions | function | def regions(doc: Doc) -> dict[str, str] |
-| register_extractor | function | def register_extractor(extractor: Extractor) -> None |
+| register_extractor | function | def register_extractor(extractor: Extractor, *, suffixes: tuple[str, ...] = ()) -> None |
 | render_doc | function | def render_doc(meta: dict[str, Any], body: str) -> str |
 | render_template | function | def render_template(template: RegionTemplate, surface: DocumentSurface) -> str |
 | set_fingerprint | function | def set_fingerprint(meta: dict[str, Any], value: str) -> dict[str, Any] |

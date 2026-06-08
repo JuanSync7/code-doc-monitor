@@ -334,9 +334,14 @@ valid until a deliberate re-baseline.
   `.project/slices/P-02.md`. *(1354 passed, 97.44% branch; dogfood check+lint exit 0.)*
 
 **P3 — Additional extractors via the protocol**
-- ☐ **P-03** register non-Python extractors keyed by `CodeRef.lang`; `_symbols_for_ref`
-  resolves `get_extractor(...)` instead of a hardcoded Python path. No engine change —
-  purely new registrations satisfying the `Extractor` Protocol (proves K0).
+- ✅ **P-03** symbol extraction routes through the P-01 registry by language:
+  `_symbols_for_ref` → `get_extractor(_symbol_language(ref)).extract(...)` (the
+  hardcoded Python path is gone); `register_extractor(ext, *, suffixes=...)`
+  self-maps `suffix → language` for `lang: auto`; `CodeRef.lang` opened to `str`
+  (back-compat loosening). A new language is a registration, NEVER an engine edit —
+  proven by a test-registered non-Python stub extractor (explicit + auto-suffix
+  resolution, unknown → `ExtractionError`), zero engine change. See
+  `.project/slices/P-03.md`.
 
 **P4 — Anchors (region ⇄ symbol identity)**
 - ☐ **P-04** anchor a managed region to a stable symbol identity (`anchor_id` from

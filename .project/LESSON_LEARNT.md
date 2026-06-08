@@ -1431,3 +1431,24 @@ line) must NOT change — their whole point is that an OLD record keeps its own 
 version and still validates with the new field defaulting. → When you bump a
 version default, grep every `schema_version` assertion and split them: freshly-built
 records assert the new version; legacy-fixture records keep the old one.
+
+**[P-03] A closed `Literal` is the enemy of a plugin point — open it to `str` and
+move loudness to resolution time.** The `Extractor` registry was useless for
+config-driven extraction while `CodeRef.lang` stayed `Literal["auto","python",
+"shell","tcl","json"]`: a third party couldn't even NAME their language in a
+config. Opening it to `str` is a back-compat *loosening* (every old value still
+validates) that trades config-load validation for extraction-time loudness
+(`get_extractor` raises `ExtractionError` on an unregistered language, K8). That
+trade is correct for K0 — the engine must NOT enumerate the languages it supports.
+→ When a field gates an extension mechanism, a closed enum defeats the mechanism;
+widen the type and push the "is this known?" check down to the registry.
+
+**[P-03] Prove an extensibility contract with a STUB, not a real implementation.**
+P-03's goal is "a new language is a registration, not an engine edit" — that is
+proven by registering a do-nothing `_ToySymbolExtractor` in a test and asserting the
+engine routes to it (explicit `lang` AND `auto`-by-suffix), exactly like a
+MockBackend proves the backend seam. Shipping a real tree-sitter/Rust parser would
+have ballooned the slice and added a heavy dep for no extra contractual evidence. →
+To validate "you can plug X in", the test-registered stub IS the evidence; defer the
+real plugin (and its optional dependency) to a follow-on. Restore global registry
+state in `finally` so the stub never leaks into another test.
