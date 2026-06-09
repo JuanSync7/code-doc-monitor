@@ -26,7 +26,7 @@ from code_doc_monitor.backends import (
     parse_backend_json,
 )
 from code_doc_monitor.blocks import expected_region
-from code_doc_monitor.config import Audience, BackendConfig
+from code_doc_monitor.config import Audience, BackendConfig, RegionMode
 from code_doc_monitor.drift import Drift, DriftKind
 from code_doc_monitor.errors import BackendError
 from code_doc_monitor.extract import DocumentSurface, Symbol
@@ -76,6 +76,7 @@ def _req(
     *,
     drift: Drift | None = None,
     audience: Audience = Audience.USER_GUIDE,
+    region_mode: RegionMode = RegionMode.GENERATED,
 ) -> FixRequest:
     surface = _surface(audience)
     return FixRequest(
@@ -85,6 +86,7 @@ def _req(
             "# Guide\n\n<!-- CDM:BEGIN symbols -->\nold\n<!-- CDM:END symbols -->\n"
         ),
         doc_spec_id="user-guide",
+        region_mode=region_mode,
     )
 
 
@@ -575,3 +577,241 @@ def test_make_backend_api() -> None:
 def test_make_backend_api_uses_default_model_when_unset() -> None:
     backend = make_backend(BackendConfig(kind="api"))
     assert isinstance(backend, ApiBackend)
+
+
+# ---------------------------------------------------------------------------
+# D-04 — FixRequest.exemplars is additive; MockBackend + build_prompt ignore it
+# ---------------------------------------------------------------------------
+def _exemplar(record_id: str = "ex1", *, resolved_text: str | None = None):
+    from code_doc_monitor.schema import Resolution, ResolutionRecord, ReviewRecord
+    from code_doc_monitor.similar import Exemplar
+
+    rec = ReviewRecord(
+        record_id=record_id,
+        doc_id="user-guide",
+        doc_path="docs/user-guide.md",
+        audience=Audience.USER_GUIDE,
+        drift_kind="REGION",
+        drift_detail="region 'symbols' is out of date",
+        cause="surface moved",
+        verdict=Verdict.FIX,
+        fix=ProposedFix(
+            region_id="symbols",
+            new_region_body="| past body |",
+            new_doc_text=None,
+            rationale="regenerated",
+        ),
+        surface_hash="h-past",
+        backend_kind="mock",
+        detected_at="2026-06-01T00:00:00Z",
+        resolved_at="2026-06-01T00:00:01Z",
+        config_snapshot={},
+    )
+    res = ResolutionRecord(
+        record_id=record_id,
+        resolution=Resolution.OVERRIDDEN if resolved_text else Resolution.ACCEPTED,
+        resolved_text=resolved_text,
+        resolved_at="2026-06-05T00:00:00Z",
+    )
+    return Exemplar(record=rec, resolution=res, score=11.0)
+
+
+def test_fix_request_exemplars_default_empty() -> None:
+    # The additive field defaults to () so every existing construction is unchanged.
+    assert _req().exemplars == ()
+
+
+def test_fix_request_accepts_exemplars() -> None:
+    req = _req()
+    with_ex = req.model_copy(update={"exemplars": (_exemplar(),)})
+    assert len(with_ex.exemplars) == 1
+    assert with_ex.exemplars[0].record.record_id == "ex1"
+
+
+def test_build_prompt_is_byte_identical_with_and_without_exemplars() -> None:
+    # The single-shot prompt builder is NOT exemplar-aware (D-04 wires exemplars only
+    # into the agent backend); exemplars must not change build_prompt's output.
+    base = _req()
+    with_ex = base.model_copy(update={"exemplars": (_exemplar(resolved_text="X"),)})
+    assert build_prompt(base) == build_prompt(with_ex)
+
+
+def test_mock_backend_ignores_exemplars_and_stays_deterministic() -> None:
+    base = _req()
+    with_ex = base.model_copy(update={"exemplars": (_exemplar(resolved_text="X"),)})
+    backend = MockBackend()
+    assert backend.propose(base) == backend.propose(with_ex)
+
+
+# ---------------------------------------------------------------------------
+# B-06: pure-`llm` (no-renderer) prose authoring
+# ---------------------------------------------------------------------------
+def _llm_region_req(audience: Audience = Audience.ENG_GUIDE) -> FixRequest:
+    """A REGION drift for a no-renderer (`overview`) llm-mode prose region."""
+    drift = _drift(
+        kind=DriftKind.REGION,
+        audience=audience,
+        region_id="overview",
+        detail="llm-authored region 'overview' is stale; backend will re-author",
+    )
+    return _req(drift=drift, audience=audience, region_mode=RegionMode.LLM)
+
+
+def test_mock_authors_deterministic_prose_for_llm_region() -> None:
+    """B-06: MockBackend authors a deterministic prose body for an `llm` REGION
+    drift with no renderer (the offline stand-in for what an LLM would write)."""
+    req = _llm_region_req(Audience.ENG_GUIDE)
+    res = MockBackend().propose(req)
+    assert res.verdict is Verdict.FIX
+    assert res.fix is not None
+    assert res.fix.new_region_body is not None
+    assert res.fix.new_doc_text is None
+    assert res.fix.region_id == "overview"
+    # Prose derives from the code surface (K2) and names the public symbol.
+    assert "create_client" in res.fix.new_region_body
+    # Prose, NOT a symbol table.
+    assert "| symbol | kind | signature |" not in res.fix.new_region_body
+
+
+def test_mock_authored_prose_is_idempotent() -> None:
+    """B-06/K10: the SAME surface authors a byte-identical body on every call."""
+    req = _llm_region_req()
+    first = MockBackend().propose(req).fix
+    second = MockBackend().propose(req).fix
+    assert first is not None and second is not None
+    assert first.new_region_body == second.new_region_body
+
+
+def test_mock_authored_prose_is_audience_aware() -> None:
+    """B-06/K3: the authored prose mentions the audience so eng vs user differ."""
+    eng = MockBackend().propose(_llm_region_req(Audience.ENG_GUIDE)).fix
+    user = MockBackend().propose(_llm_region_req(Audience.USER_GUIDE)).fix
+    assert eng is not None and user is not None
+    assert eng.new_region_body != user.new_region_body
+
+
+def test_mock_llm_region_with_renderer_is_unaffected() -> None:
+    """B-06: an `llm` REGION whose id HAS a renderer (`symbols`) is still
+    mechanically regenerated (rule 1), not prose-authored — body is the table."""
+    drift = _drift(kind=DriftKind.REGION, region_id="symbols")
+    req = _req(drift=drift, region_mode=RegionMode.LLM)
+    res = MockBackend().propose(req)
+    assert res.verdict is Verdict.FIX
+    assert res.fix is not None
+    assert "| symbol | kind | signature |" in (res.fix.new_region_body or "")
+
+
+def test_build_prompt_includes_prose_clause_for_llm_region() -> None:
+    """B-06: build_prompt appends an audience-aware PROSE clause for an `llm`
+    REGION request (real backends only)."""
+    prompt = build_prompt(_llm_region_req())
+    assert "prose" in prompt.lower()
+    assert "do not emit a symbol table" in prompt.lower()
+
+
+def test_build_prompt_omits_prose_clause_for_generated_region() -> None:
+    """B-06: a generated (non-llm) REGION request gets NO prose clause."""
+    drift = _drift(kind=DriftKind.REGION, region_id="symbols")
+    prompt = build_prompt(_req(drift=drift, region_mode=RegionMode.GENERATED))
+    assert "do not emit a symbol table" not in prompt.lower()
+
+
+def test_fix_request_region_mode_defaults_generated() -> None:
+    """B-06/K6: region_mode is additive — defaults to GENERATED for every prior
+    FixRequest that never set it."""
+    req = _req()
+    assert req.region_mode is RegionMode.GENERATED
+
+
+# ---------------------------------------------------------------------------
+# E-02 — context_refs flow into the authoring prompt (EDITOR §3)
+# ---------------------------------------------------------------------------
+def _req_with_context(refs, *, repo_root=None) -> FixRequest:
+    """A FixRequest carrying ``context_refs`` (and an optional repo_root)."""
+    from code_doc_monitor.config import ContextRef
+
+    base = _req()
+    return base.model_copy(
+        update={
+            "context_refs": tuple(ContextRef(**r) for r in refs),
+            "repo_root": repo_root,
+        }
+    )
+
+
+def test_fix_request_context_refs_default_empty() -> None:
+    """E-02/K6: context_refs is additive — defaults to () and repo_root to None,
+    so every prior FixRequest construction is unchanged."""
+    req = _req()
+    assert req.context_refs == ()
+    assert req.repo_root is None
+
+
+def test_build_prompt_renders_context_refs_block(tmp_path) -> None:
+    """E-02: a document WITH context_refs (one .md doc ref + one existing .py
+    source ref) produces the reference-material block — header, both paths, the
+    note text, and the .py ref's public symbol names."""
+    src = tmp_path / "src" / "engine.py"
+    src.parent.mkdir(parents=True)
+    src.write_text(
+        "def schedule(job):\n    return job\n\n"
+        "def _private():\n    return None\n\n"
+        "class Scheduler:\n    pass\n",
+        encoding="utf-8",
+    )
+    req = _req_with_context(
+        [
+            {"path": "docs/api/core-api.md", "note": "link to the full reference"},
+            {"path": "src/engine.py", "note": "scheduling semantics"},
+        ],
+        repo_root=str(tmp_path),
+    )
+    prompt = build_prompt(req)
+    # The labeled header is present.
+    assert "# Reference material" in prompt
+    # Both paths appear.
+    assert "docs/api/core-api.md" in prompt
+    assert "src/engine.py" in prompt
+    # The notes appear.
+    assert "link to the full reference" in prompt
+    assert "scheduling semantics" in prompt
+    # The .py ref lists PUBLIC symbol names (deterministic glance) — and NOT
+    # the private one.
+    assert "schedule" in prompt
+    assert "Scheduler" in prompt
+    assert "_private" not in prompt
+    # The .md ref has NO symbol glance line.
+    assert "public symbols" in prompt  # only from the .py ref
+
+
+def test_build_prompt_no_context_refs_has_no_block() -> None:
+    """E-02/K6: a document with NO context_refs produces NO reference block
+    (additive, no regression)."""
+    prompt = build_prompt(_req())
+    assert "# Reference material" not in prompt
+    assert "public symbols" not in prompt
+
+
+def test_build_prompt_missing_py_context_ref_marks_not_found() -> None:
+    """E-02: a .py context ref that does NOT exist is listed with a not-found
+    marker — no exception is raised (a ref may point at a not-yet-created file)."""
+    req = _req_with_context(
+        [{"path": "src/missing.py", "note": "future module"}],
+        repo_root="/nonexistent-repo-root",
+    )
+    prompt = build_prompt(req)  # must not raise
+    assert "src/missing.py" in prompt
+    assert "not found" in prompt.lower()
+
+
+def test_mock_backend_ignores_context_refs_and_stays_deterministic(tmp_path) -> None:
+    """E-02: the mock backend's verdict is unchanged by context_refs (it ignores
+    the block functionally; the block only affects the prompt text)."""
+    src = tmp_path / "engine.py"
+    src.write_text("def go():\n    return 1\n", encoding="utf-8")
+    base = _req()
+    with_refs = _req_with_context(
+        [{"path": "engine.py", "note": "n"}], repo_root=str(tmp_path)
+    )
+    backend = MockBackend()
+    assert backend.propose(base) == backend.propose(with_refs)

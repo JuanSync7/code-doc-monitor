@@ -27,9 +27,12 @@ still keeps a human in the review seat.
 
 ## How a project adopts it
 
-Write one config (`cdmon.yaml`) that maps groups of code files — down to
-functions, line ranges, or variables — onto **logical documents**, each tagged
-with an **audience**:
+Write a config that maps groups of code files — down to functions, line ranges,
+or variables — onto **logical documents**, each tagged with an **audience**. The
+canonical form is the `config/cdmon/` directory layout (an `index.yaml` plus
+per-area unit files; `cdmon` auto-detects it with no `--config`); a single
+`cdmon.yaml`/`.json` file is also supported as a back-compat path. Each document
+carries an audience:
 
 - `user-guide` — only the externally-visible surface matters; comment / local /
   private changes are *invalidated* (not drift).
@@ -37,15 +40,42 @@ with an **audience**:
   flagged.
 
 ```bash
-cdmon init                 # write a config template
+cdmon init                 # write a config template (offline)
+cdmon init --central URL --repo-id ID   # ...wired for HTTP reporting to a central server (sink=http + url + repo_id + auth_env + outbox); --token-env VAR (default CDMON_CENTRAL_TOKEN), --repo-url URL; ready to `cdmon register` + report (G-01)
+cdmon doctor               # offline, read-only preflight: PASS/WARN/FAIL on config, documents, backend prereq, central wiring, optional extras; exit 0 unless a structural FAIL (absent runtime prereq/unset token = WARN, never FAIL; no network) (G-02)
 cdmon new-doc <doc-id>     # scaffold a conformant, in-sync doc from config + code
 cdmon surface              # dump the extracted per-document surface (debug)
 cdmon lint [--fix]         # validate doc *structure* (Layout Standard); --fix stamps front matter
 cdmon check                # detect *content* drift; non-zero exit on drift (the warning)
 cdmon monitor --apply      # detect → LLM verdict → record → apply fix → re-check
-cdmon report               # summarize the review log (--verdict ESCALATE lists those records)
+cdmon monitor --ref SHA    # ...and stamp each record's source_sha provenance (else $CI_COMMIT_SHA; C-05)
+cdmon sync-pr [--dry-run]  # heal docs + emit a unified-diff patch of the changed docs (the docs-PR content); --dry-run computes the same patch without touching the tree; --out FILE writes it
+cdmon open-docs-pr [--dry-run]  # heal docs then open a docs MR (branch+commit+MR) via the default GitLab transport (stdlib urllib; from CI env); clean repo is a no-op; --dry-run prints the MR plan as JSON from a dry sync (no mutation, no network); --target/--ref set the target branch + provenance ref
+cdmon should-sync [FILES...]  # loop-safety guard: exit 0 to proceed / 1 to skip a heal; skips when every changed file is a managed doc (a bot doc-only commit). `git diff --name-only | cdmon should-sync` (C-04)
+cdmon report               # summarize the review log + resolved/unresolved counts (--verdict ESCALATE lists those records)
+cdmon resolve REC --resolution accepted [--by NAME] [--text ...] [--note ...]  # record a human outcome (accepted|overridden|rejected|invalidated) as a separate append-only event linked to a review record; the review log stays immutable (K5)
+cdmon promotions           # list promotion candidates: shapes (doc_id,drift_kind,audience) whose ≥N resolved records ALL share one DECISION (invalidated|rejected) — promotable to a deterministic rule the monitor applies with ZERO backend calls (--min-count N; --json) (D-05/D-06)
+cdmon coverage             # doc-coverage % + gaps/waivers (--json; --fail-under N gates)
+cdmon coverage --write     # write a deterministic manifest (payload + gap→owner suggestions) to .cdmon/coverage.json (idempotent; --write PATH for a custom path)
+cdmon surface-gaps [--dry-run] [--provider gitlab|github]  # turn undocumented-public-symbol coverage gaps into a tracker issue (grouped by suggested owner); no gaps is a no-op; --dry-run prints the deterministic IssuePlan JSON without building/calling a transport; else opens the issue via the provider's stdlib-urllib transport (from CI env; loud if unset) (H-04)
+cdmon register [--dry-run] # announce this repo to the central server: POST its identity (RegistrationPayload) to <central url>/repos (bearer from central.auth_env; stdlib only); --dry-run prints the payload without any network call (E-02)
 cdmon schema               # emit the public ReviewRecord JSON schema
 ```
+
+### Drop-in CI + a worked example (EPIC G)
+
+- **`templates/ci/`** — copy-paste CI for adopters: `gitlab-ci.adopter.yml`
+  (GitLab) and `github-actions.adopter.yml` (GitHub Actions), each with a
+  `cdmon-gate` job (`doctor` → `check` → `lint`, offline) and a default-branch
+  `cdmon-docs-pr` job (`should-sync` guard → `monitor --apply` → `open-docs-pr`).
+  See `templates/ci/README.md`; set `CDMON_CENTRAL_TOKEN` as a CI secret (E-06). A
+  repo test keeps the templates honest — they reference only real `cdmon`
+  subcommands.
+- **`examples/external-repo/`** — a small self-contained repo that ADOPTS cdmon
+  (its own `src/widget.py` + `docs/api.md` + `cdmon.yaml`). Its test heals it and
+  reports the healed records to an in-process central server (`TestClient`) with a
+  bearer token, proving the whole client→server loop offline (the capstone, G-04).
+  (See also `examples/multilang/` for cross-language extraction.)
 
 ## Document Layout Standard
 
@@ -105,6 +135,61 @@ The graph is fully deterministic (K10); only the injected runtime *driver*
 touches a process or socket, so the whole workflow runs offline in tests (K4).
 The agent ships behind an opt-in extra: `pip install -e '.[agent]'` (or `[dev]`).
 
+## Central server (optional `[server]` extra)
+
+The central side of the sink/registry is a FastAPI app in
+`code_doc_monitor.server` that ingests repo registrations + review records over
+the **same** versioned schemas the client sends — no DTOs. It ships behind an
+opt-in extra (`pip install -e '.[server]'`) and is imported lazily, so the core
+engine pulls in no `fastapi`. Routes:
+
+| route | body → response |
+|---|---|
+| `POST /repos` | `RegistrationPayload` → `201 {repo_id}` |
+| `POST /ingest` | `IngestEnvelope` → `202 {record_id}` (unknown repo → 404) |
+| `GET /repos` | `list[RegisteredRepo]` |
+| `GET /repos/{repo_id}/records` | `list[ReviewRecord]` (filter/paginate via query params) |
+| `GET /repos/{repo_id}/health` | `RepoHealth` — computed metrics view |
+| `GET /repos/{repo_id}/telemetry` | `RepoTelemetry` — per `(drift_kind, audience)` underperformer view (count, escalation_rate, override_rate) worst-first + promotion candidates (H-01) |
+
+A malformed body is a `422` (pydantic against the shared model). Run it with
+`cdmon-server` or `uvicorn code_doc_monitor.server.app:create_app --factory`.
+Storage is an in-memory `Store` Protocol today; a Postgres store swaps in behind
+the same Protocol later.
+
+## Interactive editing — the Mapping page
+
+The dashboard's per-repo **Mapping page** (`/repos/:repoId/mapping`) shows and
+edits the repo's `config/cdmon/*.yaml` document↔code mapping from the browser:
+
+- **View the config live.** Each document is a dropdown listing its `code_refs`
+  (the documented surface — path + symbols/lines or "whole file") and its
+  `context_refs` (generation-context references, shown distinctly). In-scope but
+  **unlinked** source files appear as a flat list; **ignored** files sit in a
+  closed `<details>` tab at the bottom.
+- **File a mapping "ticket".** "Link to a document…" / "Edit mapping" opens a form
+  — target document (existing or new id + path + audience), source file, scope
+  (whole file / a `start-end` line range / specific symbols), the four doc-style
+  category selections, and `context_refs`. Submitting stages a `config_edit`
+  (nothing is written to disk yet); staged edits show as a pending list.
+- **Generate / make live.** One button applies the staged edits to the on-disk
+  units + index, scaffolds/heals the affected docs, and re-runs the sync so the
+  page reflects the now-live state. Disk stays the git-tracked source of truth;
+  the SQL store is the live mirror the dashboard reads.
+- **One-click apply-fix.** On a drift ticket with a `FIX` verdict, an
+  **"Apply fix (LLM)"** button applies the record's proposed fix to the doc on
+  disk, records the acceptance, re-syncs, and shows the diff.
+
+**`context_refs`** is a new unit-file key for sub-documents / sub-source-files the
+author should glance through when generating a doc. It is **generation context
+only** — surfaced to the authoring prompt, never counted in coverage or drift,
+distinct from `code_refs`.
+
+Try it on the demo: `demo/` ships with `scheduler.py` intentionally **unlinked**
+— open the Mapping page, link it to a document via the ticket form, hit
+**Generate**, and watch it become documented live. `demo/walkthrough.py` drives
+the apply-fix and link→generate flows end-to-end, offline.
+
 ## Public schema
 
 Every handled drift becomes a versioned `ReviewRecord` (the public contract for
@@ -115,9 +200,10 @@ the central monitoring system). The JSON Schema is generated from the model —
 ## Dogfooding
 
 code-doc-monitor monitors **its own** source against its own engineering docs:
-the shipped [`cdmon.yaml`](cdmon.yaml) maps this package's modules onto the docs
-under `docs/api/` (with `schema.py` as a shared, multiply-referenced file). Run
-`cdmon check` here to see it in action; the dogfood is asserted in
+the shipped [`config/cdmon/`](config/cdmon) dir layout (an `index.yaml` plus the
+per-area unit files) maps this package's modules onto the docs under `docs/api/`
+(with `schema.py` as a shared, multiply-referenced file). Run `cdmon check` here
+(it auto-detects `config/cdmon/`) to see it in action; the dogfood is asserted in
 `tests/test_dogfood.py`.
 
 ## Status
@@ -142,6 +228,8 @@ python3.11 -m venv .venv && .venv/bin/pip install -e '.[dev]'  # [dev] includes 
 
 The LangGraph agent backend is an opt-in extra; for a runtime-only install use
 `pip install -e '.[agent]'` (the core engine and its `mock` default need neither).
+The central FastAPI server is a second opt-in extra: `pip install -e '.[server]'`
+(`[dev]` includes both extras so the gate exercises the server tests).
 
 ### Testing against a real LLM (CI/CD)
 

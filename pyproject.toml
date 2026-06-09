@@ -19,6 +19,22 @@ dependencies = [
 agent = [
     "langgraph>=1,<2",
 ]
+# The central FastAPI server (code_doc_monitor.server). Optional so the core
+# engine + CLIENT side (sinks/registry) keep a minimal dependency surface (K0);
+# the server subpackage imports fastapi only when used (lazy, like `agent`).
+# httpx is the FastAPI TestClient transport.
+server = [
+    "fastapi>=0.115",
+    "uvicorn[standard]",
+    "httpx",
+    # E-04: the central server's persistence layer (SQLAlchemy 2.0, Postgres-first)
+    # + migrations. The default offline suite runs on stdlib SQLite (no driver);
+    # `psycopg[binary]` is the Postgres driver, needed ONLY for the real-PG `pg`
+    # path (the `tests:pg` CI job), never for the offline SQLite suite (K4).
+    "sqlalchemy>=2.0",
+    "alembic",
+    "psycopg[binary]",
+]
 dev = [
     "pytest",
     "pytest-cov",
@@ -26,10 +42,19 @@ dev = [
     "mypy",
     "types-PyYAML",
     "langgraph>=1,<2",
+    "fastapi>=0.115",
+    "uvicorn[standard]",
+    "httpx",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "psycopg[binary]",
 ]
 
 [project.scripts]
 cdmon = "code_doc_monitor.cli:app"
+# The central server launcher (needs the [server] extra). Equivalent to
+# `uvicorn code_doc_monitor.server.app:create_app --factory`.
+cdmon-server = "code_doc_monitor.server.app:main"
 
 [tool.setuptools.packages.find]
 include = ["code_doc_monitor*"]
@@ -53,6 +78,9 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 # Typer's option/argument defaults are calls by design (B008).
 "code_doc_monitor/cli.py" = ["B008"]
+# FastAPI's `Depends(...)` in route-handler defaults is the idiomatic DI pattern
+# (B008), exactly like typer's option defaults above.
+"code_doc_monitor/server/app.py" = ["B008"]
 
 # ----------------------------------------------------------------------------
 # mypy — strict-ish
@@ -70,17 +98,45 @@ exclude = ["\\.venv"]
 module = "tests.*"
 disallow_untyped_defs = false
 
+# uvicorn ships no type stubs and is only referenced in the server-launch leaf
+# (server/app.py:main, a `# pragma: no cover` runner). Don't fail mypy on its
+# missing stub — it's part of the [server] extra, not the type-checked surface.
+[[tool.mypy.overrides]]
+module = "uvicorn"
+ignore_missing_imports = true
+
 # ----------------------------------------------------------------------------
 # pytest + coverage
 # ----------------------------------------------------------------------------
 [tool.pytest.ini_options]
 # The default suite is offline (K4): the real-LLM tests are excluded unless a
-# job opts in with `-m live_llm` (see .gitlab-ci.yml's `tests:live-llm` job).
-addopts = '-q -m "not live_llm"'
+# job opts in with `-m live_llm` (see .gitlab-ci.yml's `tests:live-llm` job). The
+# `pg` tests (E-04) run the DB contract against real Postgres; they are excluded
+# too and opt-in via `-m pg` in the `tests:pg` job — the offline suite runs the
+# same contract on stdlib SQLite, so nothing here connects to a database (K4).
+addopts = '-q -m "not live_llm and not pg"'
 testpaths = ["tests"]
 markers = [
     "live_llm: spawns a real LLM backend (resolved from the config file); opt-in, excluded by default.",
+    "pg: runs the DB store contract against a real Postgres ($CDMON_DATABASE_URL); opt-in, excluded by default (the offline suite uses SQLite).",
+    "regression: H-03 curated regression corpus — one durable invariant per learned failure mode (tests/regression/). INCLUDED in the default suite (it lives under tests/) AND selectable alone via `pytest -m regression`.",
 ]
+filterwarnings = [
+    # Starlette's TestClient (the [server] extra, E-03) emits a targeted
+    # StarletteDeprecationWarning about `httpx`/`httpx2`. Ignore ONLY that one so
+    # a future `-W error` run on the server tests stays green — warnings are NOT
+    # globally silenced.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:Warning",
+]
+
+[tool.coverage.run]
+# Measure BRANCH coverage, not just line coverage. Line coverage hides untested
+# branches (an `if` whose else-arm never runs still shows the `if` line as
+# covered); branch coverage surfaces them, so partially-exercised conditionals
+# fail the gate instead of passing silently. The two Store implementations are
+# tested at parity through HTTP (tests/test_server_store_parity.py), so the
+# branch gate guards real cross-backend behavior, not just touched lines.
+branch = true
 
 [tool.coverage.report]
 fail_under = 90

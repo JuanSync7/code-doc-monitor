@@ -15,9 +15,24 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from .errors import SchemaError
-from .schema import ReviewRecord, Verdict
+from .schema import ResolutionRecord, ReviewRecord, Verdict
 
-__all__ = ["append", "read_all", "summarize", "select_by_verdict"]
+__all__ = [
+    "append",
+    "read_all",
+    "summarize",
+    "select_by_verdict",
+    "DEFAULT_RESOLUTIONS_PATH",
+    "append_resolution",
+    "read_resolutions",
+    "resolved_index",
+    "summarize_with_resolutions",
+]
+
+# Resolutions sit alongside the review log under `.cdmon/` (a separate file so the
+# review log stays append-only/immutable — K5; the outcome is a new event, never an
+# in-place mutation of a record).
+DEFAULT_RESOLUTIONS_PATH = Path(".cdmon") / "resolutions.jsonl"
 
 
 def append(path: Path, record: ReviewRecord) -> None:
@@ -84,3 +99,78 @@ def select_by_verdict(
     slice is oldest-first and deterministic (K10).
     """
     return [r for r in records if r.verdict == verdict]
+
+
+# --- D-01/D-02: resolutions (the human outcome, joined to reviews by FK) --------
+
+
+def append_resolution(path: Path, record: ResolutionRecord) -> None:
+    """Append one resolution as a JSON line, creating parent dirs/file if missing.
+
+    Mirrors :func:`append` exactly — append-only (K5): the file is opened in append
+    mode and existing lines are never read or rewritten. A record resolved twice is a
+    SECOND line (a correction is a new event, not a mutation; the join applies
+    last-write-wins, see :func:`resolved_index`).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(record.model_dump_json())
+        fh.write("\n")
+
+
+def read_resolutions(path: Path) -> list[ResolutionRecord]:
+    """Parse every line of the resolutions log (missing file -> ``[]``).
+
+    Mirrors :func:`read_all`: a blank line is skipped; any non-empty line that fails
+    to parse raises a :class:`SchemaError` naming the line number (K8).
+    """
+    if not path.is_file():
+        return []
+    records: list[ResolutionRecord] = []
+    text = path.read_text(encoding="utf-8")
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            records.append(ResolutionRecord.model_validate_json(line))
+        except ValidationError as exc:
+            raise SchemaError(
+                f"Corrupt resolutions-log line {lineno} in {path}: {exc}"
+            ) from exc
+    return records
+
+
+def resolved_index(
+    resolutions: list[ResolutionRecord],
+) -> dict[str, ResolutionRecord]:
+    """Map ``record_id -> ResolutionRecord``, LAST-WRITE-WINS.
+
+    The resolutions log is append-only (K5), so a record resolved more than once has
+    multiple lines; the join keeps the LAST appended one (the most recent human
+    decision). Iterating in append (chronological) order and overwriting means the
+    final entry per id wins — deterministic and order-stable (K10).
+    """
+    index: dict[str, ResolutionRecord] = {}
+    for res in resolutions:
+        index[res.record_id] = res
+    return index
+
+
+def summarize_with_resolutions(
+    records: list[ReviewRecord], resolutions: list[ResolutionRecord]
+) -> dict:
+    """Join records↔resolutions: counts of resolved vs unresolved + by-resolution.
+
+    A record is *resolved* iff its ``record_id`` appears in :func:`resolved_index`.
+    Orphan resolutions (a ``record_id`` not in ``records``) are ignored so they cannot
+    inflate the counts. ``by_resolution`` is sorted by key for determinism (K10).
+    """
+    index = resolved_index(resolutions)
+    resolved = [r for r in records if r.record_id in index]
+    by_resolution = Counter(index[r.record_id].resolution.value for r in resolved)
+    return {
+        "total": len(records),
+        "resolved": len(resolved),
+        "unresolved": len(records) - len(resolved),
+        "by_resolution": dict(sorted(by_resolution.items())),
+    }

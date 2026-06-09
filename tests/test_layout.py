@@ -279,3 +279,171 @@ def test_index_coverage_accepts_md_or_html_links(tmp_path: Path) -> None:
     _write_index(tmp_path, "- [a](plugins/a.md)\n- [b](plugins/b.html)")
     codes = {i.code for i in lint_config(cfg, tmp_path)}
     assert LayoutCode.INDEX_INCOMPLETE not in codes
+
+
+# --- B-05: per-region authority STATE surface (region_states) -----------------
+
+
+def _fm(*, hashes: dict[str, str] | None = None) -> str:
+    lines = [
+        "---",
+        "cdm:",
+        "  schema_version: 1.0.0",
+        "  audience: eng-guide",
+        "  fingerprint: x",
+    ]
+    if hashes:
+        lines.append("  region_hashes:")
+        lines.extend(f"    {k}: {v}" for k, v in hashes.items())
+    lines.append("---")
+    return "\n".join(lines) + "\n"
+
+
+def _region(rid: str, body: str) -> str:
+    return f"<!-- CDM:BEGIN {rid} -->\n{body}\n<!-- CDM:END {rid} -->\n"
+
+
+def _doc_with_region(rid: str, body: str, *, fm: str | None = None) -> object:
+    head = fm if fm is not None else _fm()
+    return parse_text(head + "# T\n\n> P.\n\n" + _region(rid, body))
+
+
+def test_region_states_default_mode_is_generated() -> None:
+    from code_doc_monitor.blocks import known_region_ids
+    from code_doc_monitor.config import RegionMode
+    from code_doc_monitor.layout import region_states
+
+    spec = _spec(region_keys=("symbols",))  # no region_modes -> generated
+    doc = _doc_with_region("symbols", "body")
+    known = known_region_ids(None)
+    states = region_states(doc, spec, known=known)  # type: ignore[arg-type]
+    assert len(states) == 1
+    st = states[0]
+    assert st.doc_id == "guide"
+    assert st.region_id == "symbols"
+    assert st.mode is RegionMode.GENERATED
+    assert st.has_renderer is True
+    assert st.locked is False
+    assert st.advisory is False
+
+
+def test_region_states_human_is_advisory() -> None:
+    from code_doc_monitor.blocks import known_region_ids
+    from code_doc_monitor.config import RegionMode
+    from code_doc_monitor.layout import region_states
+
+    spec = _spec(region_keys=("symbols",), region_modes={"symbols": RegionMode.HUMAN})
+    doc = _doc_with_region("symbols", "human prose")
+    known = known_region_ids(None)
+    st = region_states(doc, spec, known=known)[0]  # type: ignore[arg-type]
+    assert st.mode is RegionMode.HUMAN
+    assert st.advisory is True
+    # human is advisory but not "locked" (locked is the llm-seeded human edit).
+    assert st.locked is False
+
+
+def test_region_states_llm_seeded_lock_state_tracks_hash() -> None:
+    from code_doc_monitor.blocks import known_region_ids
+    from code_doc_monitor.config import RegionMode
+    from code_doc_monitor.layout import region_states
+    from code_doc_monitor.manifest import region_body_hash
+
+    body = "seeded then edited"
+    known = known_region_ids(None)
+    spec = _spec(
+        region_keys=("symbols",), region_modes={"symbols": RegionMode.LLM_SEEDED}
+    )
+    # A DIFFERENT stored hash -> region_is_locked() reports it human-edited.
+    stale = _fm(hashes={"symbols": "deadbeefdeadbeef"})
+    locked_doc = _doc_with_region("symbols", body, fm=stale)
+    st = region_states(locked_doc, spec, known=known)[0]  # type: ignore[arg-type]
+    assert st.mode is RegionMode.LLM_SEEDED
+    assert st.locked is True
+    assert st.advisory is True  # a locked llm-seeded region is human-owned
+
+    # A MATCHING stored hash -> unlocked (engine still owns it).
+    matching = _fm(hashes={"symbols": region_body_hash(body)})
+    unlocked_doc = _doc_with_region("symbols", body, fm=matching)
+    st2 = region_states(unlocked_doc, spec, known=known)[0]  # type: ignore[arg-type]
+    assert st2.locked is False
+    assert st2.advisory is False
+
+
+def test_region_states_llm_interim_has_no_renderer() -> None:
+    """A pure-`llm` region with no built-in renderer is reported has_renderer=False
+    (interim rule: behaves like generated; B-06 will add prose authoring)."""
+    from code_doc_monitor.blocks import known_region_ids
+    from code_doc_monitor.config import RegionMode
+    from code_doc_monitor.layout import region_states
+
+    spec = _spec(region_keys=("intro",), region_modes={"intro": RegionMode.LLM})
+    doc = _doc_with_region("intro", "prose")
+    known = known_region_ids(None)
+    st = region_states(doc, spec, known=known)[0]  # type: ignore[arg-type]
+    assert st.mode is RegionMode.LLM
+    assert st.has_renderer is False
+    assert st.advisory is False  # interim llm is engine-owned, not human-owned
+
+
+def test_region_states_ordered_by_region_keys_and_skips_undeclared() -> None:
+    from code_doc_monitor.blocks import known_region_ids
+    from code_doc_monitor.layout import region_states
+
+    spec = _spec(region_keys=("symbols", "intro"))
+    body = (
+        "# T\n\n> P.\n\n"
+        + _region("intro", "i")
+        + "\n"
+        + _region("symbols", "s")
+        + "\n"
+        + _region("stray", "x")
+    )
+    doc = parse_text(_fm() + body)
+    known = known_region_ids(None)
+    states = region_states(doc, spec, known=known)  # type: ignore[arg-type]
+    # ordered by region_keys (symbols, intro), undeclared "stray" skipped.
+    assert [s.region_id for s in states] == ["symbols", "intro"]
+
+
+def test_config_region_states_across_docs(tmp_path: Path) -> None:
+    from code_doc_monitor.config import Audience as A
+    from code_doc_monitor.config import CodeRef, MonitorConfig, RegionMode
+    from code_doc_monitor.layout import config_region_states
+
+    (tmp_path / "mod.py").write_text(_MODULE, encoding="utf-8")
+    (tmp_path / "a.md").write_text(
+        _fm() + "# A\n\n> P.\n\n" + _region("symbols", "b"), encoding="utf-8"
+    )
+    spec = DocumentSpec(
+        id="a",
+        path="a.md",
+        audience=A.ENG_GUIDE,
+        code_refs=(CodeRef(path="mod.py"),),
+        region_keys=("symbols",),
+        region_modes={"symbols": RegionMode.HUMAN},
+    )
+    # also a missing doc -> skipped, no crash
+    missing = DocumentSpec(id="m", path="missing.md", audience=A.ENG_GUIDE)
+    cfg = MonitorConfig(root=".", documents=(spec, missing))
+    states = config_region_states(cfg, tmp_path)
+    assert [(s.doc_id, s.region_id, s.mode.value) for s in states] == [
+        ("a", "symbols", "human")
+    ]
+
+
+def test_config_region_states_skips_malformed_doc(tmp_path: Path) -> None:
+    from code_doc_monitor.config import Audience as A
+    from code_doc_monitor.config import MonitorConfig
+    from code_doc_monitor.layout import config_region_states
+
+    # An unterminated region -> parse_doc -> regions() raises DriftError, which
+    # config_region_states swallows (lint_doc reports the structural issue).
+    (tmp_path / "bad.md").write_text(
+        _fm() + "# T\n\n> P.\n\n<!-- CDM:BEGIN x -->\nunterminated\n",
+        encoding="utf-8",
+    )
+    spec = DocumentSpec(
+        id="bad", path="bad.md", audience=A.ENG_GUIDE, region_keys=("x",)
+    )
+    cfg = MonitorConfig(root=".", documents=(spec,))
+    assert config_region_states(cfg, tmp_path) == []

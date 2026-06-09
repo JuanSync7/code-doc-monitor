@@ -15,11 +15,21 @@ from code_doc_monitor.config import Audience
 from code_doc_monitor.errors import SchemaError
 from code_doc_monitor.reviewlog import (
     append,
+    append_resolution,
     read_all,
+    read_resolutions,
+    resolved_index,
     select_by_verdict,
     summarize,
+    summarize_with_resolutions,
 )
-from code_doc_monitor.schema import ProposedFix, ReviewRecord, Verdict
+from code_doc_monitor.schema import (
+    ProposedFix,
+    Resolution,
+    ResolutionRecord,
+    ReviewRecord,
+    Verdict,
+)
 
 
 def _record(
@@ -142,3 +152,124 @@ def test_summarize_ordering_is_deterministic() -> None:
     # Keys sorted deterministically (K10).
     assert list(summary["by_doc_id"].keys()) == ["alpha", "zeta"]
     assert list(summary["by_verdict"].keys()) == ["ESCALATE", "FIX"]
+
+
+# --- D-01/D-02: resolutions log (separate append-only event, joined by FK) -----
+
+
+def _resolution(
+    record_id: str,
+    resolution: Resolution = Resolution.ACCEPTED,
+    resolved_text: str | None = None,
+    resolved_at: str = "2026-06-05T00:00:00Z",
+) -> ResolutionRecord:
+    return ResolutionRecord(
+        record_id=record_id,
+        resolution=resolution,
+        resolved_text=resolved_text,
+        resolved_at=resolved_at,
+    )
+
+
+def test_read_resolutions_missing_file_is_empty(tmp_path: Path) -> None:
+    assert read_resolutions(tmp_path / "nope.jsonl") == []
+
+
+def test_append_resolution_creates_parent_dirs_and_round_trips(tmp_path: Path) -> None:
+    path = tmp_path / "nested" / "deep" / "resolutions.jsonl"
+    rec = _resolution("r1")
+    append_resolution(path, rec)
+    assert path.is_file()
+    assert read_resolutions(path) == [rec]
+
+
+def test_append_resolution_is_additive_not_truncating(tmp_path: Path) -> None:
+    path = tmp_path / "resolutions.jsonl"
+    recs = [_resolution("r1"), _resolution("r2"), _resolution("r3")]
+    for rec in recs:
+        append_resolution(path, rec)
+    assert path.read_text(encoding="utf-8").count("\n") == 3
+    assert read_resolutions(path) == recs
+
+
+def test_resolution_blank_lines_are_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "resolutions.jsonl"
+    append_resolution(path, _resolution("r1"))
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("\n   \n")
+    append_resolution(path, _resolution("r2"))
+    assert [r.record_id for r in read_resolutions(path)] == ["r1", "r2"]
+
+
+def test_corrupt_resolution_line_raises_schema_error(tmp_path: Path) -> None:
+    path = tmp_path / "resolutions.jsonl"
+    append_resolution(path, _resolution("r1"))
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("this is not json\n")
+    with pytest.raises(SchemaError):
+        read_resolutions(path)
+
+
+def test_resolved_index_last_write_wins() -> None:
+    # A record resolved twice: the LAST appended resolution wins (append-only log;
+    # a correction is a new event, never a mutation).
+    resolutions = [
+        _resolution("r1", Resolution.REJECTED, resolved_at="2026-06-05T00:00:00Z"),
+        _resolution("r1", Resolution.ACCEPTED, resolved_at="2026-06-05T01:00:00Z"),
+        _resolution("r2", Resolution.OVERRIDDEN),
+    ]
+    index = resolved_index(resolutions)
+    assert set(index) == {"r1", "r2"}
+    assert index["r1"].resolution == Resolution.ACCEPTED  # last wins
+    assert index["r1"].resolved_at == "2026-06-05T01:00:00Z"
+
+
+def test_summarize_with_resolutions_counts_resolved_unresolved() -> None:
+    records = [
+        _record("r1"),
+        _record("r2"),
+        _record("r3"),
+    ]
+    resolutions = [
+        _resolution("r1", Resolution.ACCEPTED),
+        _resolution("r2", Resolution.OVERRIDDEN, resolved_text="reworded"),
+    ]
+    summary = summarize_with_resolutions(records, resolutions)
+    assert summary["total"] == 3
+    assert summary["resolved"] == 2
+    assert summary["unresolved"] == 1
+    assert summary["by_resolution"] == {"accepted": 1, "overridden": 1}
+
+
+def test_summarize_with_resolutions_ignores_orphan_resolutions() -> None:
+    # A resolution whose record_id is not in the review log does not inflate counts.
+    records = [_record("r1")]
+    resolutions = [
+        _resolution("r1", Resolution.ACCEPTED),
+        _resolution("ghost", Resolution.REJECTED),
+    ]
+    summary = summarize_with_resolutions(records, resolutions)
+    assert summary["total"] == 1
+    assert summary["resolved"] == 1
+    assert summary["unresolved"] == 0
+    assert summary["by_resolution"] == {"accepted": 1}
+
+
+def test_summarize_with_resolutions_empty_is_zeroed() -> None:
+    summary = summarize_with_resolutions([], [])
+    assert summary == {
+        "total": 0,
+        "resolved": 0,
+        "unresolved": 0,
+        "by_resolution": {},
+    }
+
+
+def test_summarize_with_resolutions_by_resolution_is_sorted() -> None:
+    records = [_record("r1"), _record("r2")]
+    resolutions = [
+        _resolution("r1", Resolution.REJECTED),
+        _resolution("r2", Resolution.ACCEPTED),
+    ]
+    keys = list(summarize_with_resolutions(records, resolutions)["by_resolution"])
+    assert keys == ["accepted", "rejected"]  # sorted, deterministic (K10)

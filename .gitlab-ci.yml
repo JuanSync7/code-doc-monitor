@@ -21,6 +21,22 @@
 #                   on-demand (manual), never on a bare push — so normal CI
 #                   spends no tokens.
 #
+#   docs:gate       A fast, OFFLINE doc-drift gate (C-01, K4: no network, no LLM).
+#                   Runs `cdmon check` + `cdmon lint` against the dogfood config and
+#                   FAILS the pipeline on drift — an orthogonal signal to
+#                   `tests:offline` (content/structure drift, not the test suite).
+#                   Runs on every MR + branch.
+#
+#   docs:heal       The PR-driven heal (C-01..C-05): on a branch push it heals the
+#                   docs and opens a docs MR (`cdmon open-docs-pr`). It is GUARDED
+#                   by `cdmon should-sync` (C-04, the structural loop-breaker): the
+#                   push's changed-file list (`git diff --name-only`) is piped to
+#                   `should-sync`, which exits 1 (SKIP) when EVERY changed file is a
+#                   managed doc path — i.e. the bot's own doc-only commit — so the
+#                   heal does NOT re-trigger and open another MR. The healed run
+#                   stamps provenance via `--ref "$CI_COMMIT_SHA"` (C-05) so each
+#                   review record's `source_sha` and the MR title/description agree.
+#
 #   sast / secret_detection   GitLab security scanning, preserved from the
 #                   project's initial configuration.
 
@@ -53,9 +69,87 @@ tests:offline:
     - .venv/bin/ruff check .
     - .venv/bin/mypy code_doc_monitor
     - .venv/bin/pytest --cov=code_doc_monitor --cov-branch
+    # HARD doc-coverage gate (H-02). The engine documents its OWN public surface
+    # (docs/api/*) — self-coverage is 100% of scanned engine public symbols
+    # (the 3 re-export __init__ aggregators are explicitly waived in the units).
+    # --fail-under 95 holds a couple points of headroom below the achieved 100%
+    # so the build fails if a new engine module's symbols land undocumented.
+    # (tests/test_dogfood.py also asserts this threshold so it can't regress.)
+    # Z-02: cdmon's canonical self-config is the CONFIG-V2 config/cdmon/ dir
+    # layout (the redundant single-file cdmon.yaml was removed).
+    - .venv/bin/cdmon coverage --config config/cdmon --fail-under 95
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
+
+docs:gate:
+  stage: test
+  script:
+    - python -m venv .venv
+    - .venv/bin/pip install -e '.[dev]'
+    # Detect-only (K1) content gate + structural lint gate, both offline (K4).
+    # Either failing fails the pipeline, so doc drift never lands silently.
+    - .venv/bin/cdmon check --config config/cdmon
+    - .venv/bin/cdmon lint --config config/cdmon
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+docs:heal:
+  stage: test
+  script:
+    - python -m venv .venv
+    - .venv/bin/pip install -e '.[dev]'
+    # C-04 loop-safety guard (the structural loop-breaker): collect the push's
+    # changed files and ask `cdmon should-sync` whether to heal. It exits 1 (SKIP)
+    # when EVERY changed file is a managed doc path — i.e. the bot's OWN doc-only
+    # commit — so this job opens NO new MR and the PR→heal→PR loop is broken.
+    # `git diff --name-only` against the previous commit is the provider-agnostic
+    # changed-file list `should-sync` consumes (however CI obtains it).
+    - |
+      CHANGED="$(git diff --name-only "${CI_COMMIT_BEFORE_SHA:-HEAD~1}" HEAD || true)"
+      if ! printf '%s\n' "$CHANGED" | .venv/bin/cdmon should-sync --config config/cdmon; then
+        echo "doc-only commit (bot heal) — skipping heal to avoid re-triggering the loop"
+        exit 0
+      fi
+    # Real code change: heal the docs and open a docs MR, stamping provenance
+    # (C-05) so the record's source_sha matches the MR's ref ($CI_COMMIT_SHA).
+    - .venv/bin/cdmon monitor --apply --config config/cdmon --ref "$CI_COMMIT_SHA"
+    - .venv/bin/cdmon open-docs-pr --config config/cdmon --ref "$CI_COMMIT_SHA"
+  rules:
+    # Branch pushes only (not MR events) — the heal opens an MR off the branch.
+    - if: '$CI_COMMIT_BRANCH'
+      when: manual
+      allow_failure: true
+
+tests:pg:
+  # The E-04 DB store contract against a REAL Postgres (the `pg` marker). The
+  # OFFLINE suite (tests:offline) runs the SAME contract on stdlib SQLite, so this
+  # job adds the Postgres-specific coverage (JSONB column, the psycopg driver).
+  # Opt-in (manual / scheduled), mirroring tests:live-llm — normal CI stays SQLite.
+  stage: live
+  needs: ["tests:offline"]
+  services:
+    - name: postgres:16
+      alias: postgres
+  variables:
+    POSTGRES_DB: cdmon
+    POSTGRES_USER: cdmon
+    POSTGRES_PASSWORD: cdmon
+    # The psycopg (v3) driver URL the `pg` tests + Alembic env read.
+    CDMON_DATABASE_URL: "postgresql+psycopg://cdmon:cdmon@postgres:5432/cdmon"
+  script:
+    - python -m venv .venv
+    - .venv/bin/pip install -e '.[dev]'
+    # `-m pg` overrides the default `-m "not live_llm and not pg"` from addopts so
+    # only the Postgres-marked contract test runs (against $CDMON_DATABASE_URL).
+    - .venv/bin/pytest -m pg
+  rules:
+    # Scheduled pipeline -> a real gate (a Postgres regression fails the pipeline).
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    # Otherwise available on-demand from the pipeline UI; non-blocking.
+    - when: manual
+      allow_failure: true
 
 tests:live-llm:
   stage: live

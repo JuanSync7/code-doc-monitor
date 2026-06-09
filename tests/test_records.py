@@ -112,6 +112,29 @@ def test_extract_switches_loud_on_missing_file(tmp_path):
         extract_switches(tmp_path / "nope.sh", lang="shell")
 
 
+def test_extract_switches_python_loud_on_syntax_error(tmp_path):
+    # A python switch source that won't parse is a loud ExtractionError (K8),
+    # never a silent empty result that would mask the broken reference.
+    p = tmp_path / "broken.py"
+    p.write_text("def f(:\n    pass\n")
+    with pytest.raises(ExtractionError, match="(?i)syntax"):
+        extract_switches(p, lang="python")
+
+
+def test_extract_argparse_loud_on_syntax_error(tmp_path):
+    # Same loud-error contract for the argparse projector (K8).
+    p = tmp_path / "broken_cli.py"
+    p.write_text("import argparse\nap = argparse.ArgumentParser(\n")
+    with pytest.raises(ExtractionError, match="(?i)parse|syntax"):
+        extract_argparse_records(p)
+
+
+def test_extract_argparse_loud_on_missing_file(tmp_path):
+    # A missing argparse source is loud too (K8), not a silent empty projection.
+    with pytest.raises(ExtractionError, match="(?i)not found"):
+        extract_argparse_records(tmp_path / "absent.py")
+
+
 def test_records_ref_without_json_records_is_loud(tmp_path):
     (tmp_path / "f.json").write_text("{}")
     spec = DocumentSpec(

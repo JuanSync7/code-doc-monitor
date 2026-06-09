@@ -197,6 +197,35 @@ def test_render_context_includes_index_body_when_present() -> None:
     assert "| Document | ... |" in ctx
 
 
+def test_render_context_includes_context_refs_block(tmp_path: Path) -> None:
+    """E-02: the agent's render_context surfaces the document's context_refs as a
+    reference block (mirroring build_prompt) — header, paths, note, and a .py
+    ref's public symbol glance."""
+    from code_doc_monitor.config import ContextRef
+
+    src = tmp_path / "engine.py"
+    src.write_text("def schedule(job):\n    return job\n", encoding="utf-8")
+    ctx = render_context(
+        _req(
+            context_refs=(
+                ContextRef(path="docs/api/core-api.md", note="full reference"),
+                ContextRef(path="engine.py", note="scheduling semantics"),
+            ),
+            repo_root=str(tmp_path),
+        )
+    )
+    assert "# Reference material" in ctx
+    assert "docs/api/core-api.md" in ctx
+    assert "full reference" in ctx
+    assert "engine.py" in ctx
+    assert "schedule" in ctx  # public symbol glance
+
+
+def test_render_context_without_context_refs_omits_block() -> None:
+    """E-02/K6: with NO context_refs the reference block is absent (additive)."""
+    assert "# Reference material" not in render_context(_req())
+
+
 # ---------------------------------------------------------------------------
 # The graph via AgentBackend — happy path, retry, exhaustion
 # ---------------------------------------------------------------------------
@@ -496,3 +525,150 @@ def public_fn(x: int) -> int:
     records = read_all(tmp_path / ".cdmon" / "review-log.jsonl")
     assert records[0].verdict == Verdict.FIX
     assert records[0].fix is not None  # both drift and fix recorded (K5)
+
+
+# ---------------------------------------------------------------------------
+# D-04 — few-shot exemplars (additive; default-empty ⇒ byte-identical prompt)
+# ---------------------------------------------------------------------------
+def _exemplar(
+    record_id: str = "ex1",
+    *,
+    resolution=None,
+    resolved_text: str | None = None,
+    region_body: str = "| past region body |",
+):
+    from code_doc_monitor.schema import (
+        ProposedFix,
+        Resolution,
+        ResolutionRecord,
+        ReviewRecord,
+    )
+    from code_doc_monitor.similar import Exemplar
+
+    rec = ReviewRecord(
+        record_id=record_id,
+        doc_id="d",
+        doc_path="d.md",
+        audience=Audience.ENG_GUIDE,
+        drift_kind="REGION",
+        drift_detail="region 'symbols' is out of date",
+        cause="surface moved",
+        verdict=Verdict.FIX,
+        fix=ProposedFix(
+            region_id="symbols",
+            new_region_body=region_body,
+            new_doc_text=None,
+            rationale="regenerated",
+        ),
+        surface_hash="h-past",
+        backend_kind="mock",
+        detected_at="2026-06-01T00:00:00Z",
+        resolved_at="2026-06-01T00:00:01Z",
+        config_snapshot={},
+    )
+    res = ResolutionRecord(
+        record_id=record_id,
+        resolution=resolution or Resolution.ACCEPTED,
+        resolved_text=resolved_text,
+        resolved_at="2026-06-05T00:00:00Z",
+    )
+    return Exemplar(record=rec, resolution=res, score=11.0)
+
+
+def test_exemplars_artifact_is_packaged_and_loadable() -> None:
+    lib = PromptLibrary()
+    assert lib.exists(Artifact.EXEMPLARS)
+    body = lib.get(Artifact.EXEMPLARS)
+    assert not body.startswith("---")  # frontmatter stripped
+    assert "exemplar" in body.lower()
+
+
+def test_select_artifacts_includes_exemplars_only_when_present() -> None:
+    from code_doc_monitor.schema import Resolution
+
+    # Absent by default -> not selected.
+    assert Artifact.EXEMPLARS not in select_artifacts(
+        _req(), AgentConfig(), PromptLibrary()
+    )
+    # Present -> selected.
+    req = _req()
+    with_ex = req.model_copy(
+        update={"exemplars": (_exemplar(resolution=Resolution.OVERRIDDEN),)}
+    )
+    names = select_artifacts(with_ex, AgentConfig(), PromptLibrary())
+    assert Artifact.EXEMPLARS in names
+
+
+def test_render_context_renders_exemplar_and_resolved_text() -> None:
+    from code_doc_monitor.schema import Resolution
+
+    req = _req()
+    with_ex = req.model_copy(
+        update={
+            "exemplars": (
+                _exemplar(
+                    resolution=Resolution.OVERRIDDEN,
+                    resolved_text="THE HUMAN FINAL BODY",
+                ),
+            )
+        }
+    )
+    ctx = render_context(with_ex)
+    assert "overridden" in ctx.lower()
+    assert "THE HUMAN FINAL BODY" in ctx  # the OVERRIDDEN human text is shown
+    # ...and a no-exemplar context does NOT mention exemplars.
+    assert "THE HUMAN FINAL BODY" not in render_context(req)
+
+
+def test_render_context_without_exemplars_is_byte_identical_to_pre_d04(
+    tmp_path: Path,
+) -> None:
+    # With NO exemplars, render_context must be byte-identical to today's output.
+    req = _req()
+    empty = req.model_copy(update={"exemplars": ()})
+    assert render_context(req) == render_context(empty)
+
+
+def test_composed_prompt_includes_exemplar_text_when_present() -> None:
+    from code_doc_monitor.schema import Resolution
+
+    req = _req()
+    with_ex = req.model_copy(
+        update={
+            "exemplars": (
+                _exemplar(
+                    resolution=Resolution.OVERRIDDEN,
+                    resolved_text="HUMAN-REWRITTEN-EXEMPLAR",
+                ),
+            )
+        }
+    )
+    seen = {}
+
+    def driver(prompt: str) -> str:
+        seen["prompt"] = prompt
+        return _fix_reply("X")
+
+    AgentBackend(AgentConfig(), driver=driver).propose(with_ex)
+    assert "HUMAN-REWRITTEN-EXEMPLAR" in seen["prompt"]  # resolution text in prompt
+    assert "exemplar" in seen["prompt"].lower()  # EXEMPLARS.md framing present
+
+
+def test_composed_prompt_without_exemplars_is_byte_identical_to_pre_d04() -> None:
+    # The whole composed prompt (artifacts + context) with no exemplars must be the
+    # same bytes as before D-04: no EXEMPLARS.md section, no exemplar context.
+    seen = {}
+
+    def driver(prompt: str) -> str:
+        seen["prompt"] = prompt
+        return _fix_reply("X")
+
+    req = _req()
+    AgentBackend(AgentConfig(), driver=driver).propose(req)
+    prompt = seen["prompt"]
+    assert "EXEMPLARS" not in prompt
+    assert "Similar past" not in prompt
+    # The pre-D-04 artifacts/context are all still present and unmodified.
+    assert "single source of truth" in prompt  # AGENT.md
+    assert "ONE JSON object" in prompt  # PROTOCOL.md
+    assert "kind: REGION" in prompt  # context

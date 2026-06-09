@@ -15,6 +15,9 @@ __all__ = [
     "DriftError",
     "BackendError",
     "SchemaError",
+    "InventoryError",
+    "TransportError",
+    "SyncError",
 ]
 
 
@@ -40,3 +43,20 @@ class BackendError(CodeDocMonitorError):
 
 class SchemaError(CodeDocMonitorError):
     """A review record failed to serialize/validate against the schema (K8)."""
+
+
+class InventoryError(CodeDocMonitorError):
+    """A repo root could not be inventoried (missing or not a directory) (K8)."""
+
+
+class TransportError(CodeDocMonitorError):
+    """A PR transport could not be built or a provider call failed (K8)."""
+
+
+class SyncError(CodeDocMonitorError):
+    """A config-sync run could not be performed (Y-02, K8).
+
+    Raised for a missing ``local_path``, an unknown sync ``mode``, or a failed
+    git subprocess (the working tree could not be materialized / inspected). The
+    user's working tree is NEVER mutated on the failure path (K1).
+    """
