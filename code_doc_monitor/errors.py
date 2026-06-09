@@ -18,6 +18,7 @@ __all__ = [
     "InventoryError",
     "TransportError",
     "SyncError",
+    "CatalogError",
 ]
 
 
@@ -59,4 +60,12 @@ class SyncError(CodeDocMonitorError):
     Raised for a missing ``local_path``, an unknown sync ``mode``, or a failed
     git subprocess (the working tree could not be materialized / inspected). The
     user's working tree is NEVER mutated on the failure path (K1).
+    """
+
+
+class CatalogError(CodeDocMonitorError):
+    """The golden feature catalog is missing, malformed, or inconsistent (EPIC R, K8).
+
+    Raised for a missing/empty catalog dir, malformed yaml, a bad feature id,
+    a duplicate id across files, or a feature naming a non-existent module.
     """
