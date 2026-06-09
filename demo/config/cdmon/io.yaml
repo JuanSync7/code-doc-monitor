@@ -1,0 +1,26 @@
+---
+# Frontmatter (REQUIRED). `unit` MUST equal this file's stem ("io").
+cdmon-config-version: "2.0.0"
+unit: io
+title: "Taskflow I/O: storage + report adapters"
+owner: demo-team
+created: "2026-06-07"
+updated: "2026-06-07"
+---
+# Body: the coverage scope this unit owns + the documents it carries.
+
+# Disjoint from the core unit's dir-covered.
+dir-covered:
+  - src/taskflow/io
+
+source-files-format:
+  - ".py"
+
+documents:
+  - id: io-api
+    path: docs/api/io-api.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: src/taskflow/io/storage.py
+      - path: src/taskflow/io/report.py

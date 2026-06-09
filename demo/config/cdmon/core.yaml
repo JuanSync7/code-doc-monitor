@@ -1,0 +1,54 @@
+---
+# Frontmatter (REQUIRED): traceability metadata. `unit` MUST equal this file's
+# stem ("core"), or load_unit_file raises a loud ConfigError (K8).
+cdmon-config-version: "2.0.0"
+unit: core
+title: "Taskflow core: model + scheduling engine"
+owner: demo-team
+created: "2026-06-07"
+updated: "2026-06-07"
+---
+# Body: the coverage scope this unit owns + the documents it carries.
+
+# This unit owns the core package. dir-covered is disjoint from the io unit's
+# directory, so each .py file belongs to exactly one unit (no overlap, K8).
+dir-covered:
+  - src/taskflow/core
+
+# Only .py files under dir-covered count toward coverage. The sibling
+# `notes.log` (under src/taskflow/core) is therefore NOT in the denominator.
+source-files-format:
+  - ".py"
+
+documents:
+  - id: core-api
+    path: docs/api/core-api.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: src/taskflow/core/model.py
+      - path: src/taskflow/core/engine.py
+
+  # A user-facing guide (audience: user-guide) over the two most user-facing
+  # public types. Its single managed `symbols` region uses SYMBOL-SELECTIVE
+  # code_refs (Task from model.py, Engine from engine.py) — both files are
+  # already documented by core-api, so this adds NO new coverage gap.
+  - id: getting-started
+    path: docs/guide/getting-started.md
+    audience: user-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: src/taskflow/core/model.py
+        symbols: ["Task"]
+      - path: src/taskflow/core/engine.py
+        symbols: ["Engine"]
+    # context_refs (EDITOR E-01, additive/K6): "glance-through" references the
+    # author refers to when writing this tour — NOT documented surface, NOT
+    # coverage, NOT drift. They flow into the editable tree + the generation
+    # prompt, never into code_refs or the denominator (scheduler.py stays the
+    # only gap; this doc still adds no new coverage).
+    context_refs:
+      - path: docs/api/core-api.md
+        note: "the full engine reference"
+      - path: src/taskflow/core/engine.py
+        note: "scheduling semantics referenced in the tour"

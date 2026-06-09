@@ -1,0 +1,16 @@
+---
+# Frontmatter (REQUIRED): provenance.
+cdmon-config-version: "2.0.0"
+source: ".gitignore + manual"
+updated: "2026-06-07"
+---
+# Body: the effective ignore set = patterns ∪ (.gitignore globs when gitignore:
+# true). A file matching the ignore set is removed from the coverage universe —
+# it is never reported as "uncovered".
+
+gitignore: true
+patterns:
+  - "**/__pycache__/**"
+  - "**/.venv/**"
+  - "*.rpt"
+  - "*.log"

@@ -31,7 +31,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from ..backends import FixRequest, parse_backend_json
+from ..backends import FixRequest, _render_context_refs, parse_backend_json
 from ..blocks import symbol_table
 from ..config import AgentConfig
 from ..drift import DriftKind
@@ -56,14 +56,60 @@ def select_artifacts(
     AGENT + PROTOCOL are always needed (the recipe and the wire contract). TOOL
     (the fix shapes) is needed only when a fix may be produced — i.e. the drift
     is healable, not ``UNHEALABLE``. PERSONA is composed only when enabled and
-    actually present.
+    actually present. EXEMPLARS (D-04) is composed only when the request carries
+    few-shot exemplars — with none, the selection (and so the prompt) is
+    byte-identical to pre-D-04 (additive, K6/K9).
     """
     names = [Artifact.AGENT, Artifact.PROTOCOL]
     if req.drift.healable and req.drift.kind is not DriftKind.UNHEALABLE:
         names.append(Artifact.TOOL)
     if cfg.use_persona and library.exists(Artifact.PERSONA):
         names.append(Artifact.PERSONA)
+    if req.exemplars:
+        names.append(Artifact.EXEMPLARS)
     return names
+
+
+def _render_exemplars(req: FixRequest) -> str:
+    """Render the retrieved few-shot exemplars, or ``""`` when there are none.
+
+    Returns the empty string for an exemplar-free request so :func:`render_context`
+    is BYTE-IDENTICAL to its pre-D-04 output (additive, K9). Each exemplar shows the
+    past drift's shape, its human outcome, and — for an ``overridden`` resolution —
+    the exact ``resolved_text`` the human committed (the gold answer, K5).
+    """
+    if not req.exemplars:
+        return ""
+    blocks: list[str] = []
+    for i, ex in enumerate(req.exemplars, start=1):
+        rec = ex.record
+        res = ex.resolution
+        outcome = (
+            f"\n  resolved_text (the human's final body):\n<<<RESOLVED\n"
+            f"{res.resolved_text}\nRESOLVED"
+            if res.resolved_text is not None
+            else ""
+        )
+        fix_body = ""
+        if rec.fix is not None:
+            fix_body = f"\n  proposed fix rationale: {rec.fix.rationale}"
+        blocks.append(
+            f"## Exemplar {i} (similarity score {ex.score:g})\n"
+            f"- doc_id: {rec.doc_id}\n"
+            f"- audience: {rec.audience.value}\n"
+            f"- drift kind: {rec.drift_kind}\n"
+            f"- drift detail: {rec.drift_detail}\n"
+            f"- past verdict: {rec.verdict.value}\n"
+            f"- human outcome: {res.resolution.value}"
+            f"{fix_body}"
+            f"{outcome}"
+        )
+    return (
+        "\nSimilar past drifts a human has already resolved "
+        "(precedent — read per EXEMPLARS.md; the surface above still wins, K2):\n"
+        + "\n\n".join(blocks)
+        + "\n"
+    )
 
 
 def render_context(req: FixRequest) -> str:
@@ -71,7 +117,9 @@ def render_context(req: FixRequest) -> str:
 
     The artifacts carry the static role/contract/shapes; this carries the one
     thing that changes per drift — the audience, the document, and the code
-    surface that is its single source of truth (K2).
+    surface that is its single source of truth (K2). When the request carries
+    few-shot exemplars (D-04), they are appended LAST; with none, the output is
+    byte-identical to pre-D-04 (additive, K9).
     """
     drift = req.drift
     region_line = (
@@ -85,6 +133,20 @@ def render_context(req: FixRequest) -> str:
         if req.index_body is not None
         else ""
     )
+    # N-05: when a doc-style map is in play, the four selected writing-template
+    # bodies are appended LAST so they frame HOW to author the prose. With none
+    # (req.style_guidance is None) the output is byte-identical to today (additive,
+    # K6) — the seam is the FixRequest field, no global reached into (K10).
+    style_block = (
+        "\n# Writing guidance (apply when AUTHORING this document's prose)\n"
+        f"{req.style_guidance}\n"
+        if req.style_guidance is not None
+        else ""
+    )
+    # E-02: the document's glance-through context refs as a reference block,
+    # rendered identically to the single-shot prompt (shared helper). Empty for a
+    # context-ref-free request ⇒ byte-identical to pre-E-02 (additive, K6).
+    context_block = _render_context_refs(req)
     return (
         "# This remediation\n"
         f"Audience: {req.surface.audience.value}\n"
@@ -107,6 +169,9 @@ def render_context(req: FixRequest) -> str:
         f"{symbol_table(req.surface)}\n"
         "SURFACE\n"
         f"{index_line}"
+        f"{context_block}"
+        f"{_render_exemplars(req)}"
+        f"{style_block}"
     )
 
 

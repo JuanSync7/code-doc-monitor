@@ -32,6 +32,8 @@ class Artifact:
     PROTOCOL = "PROTOCOL"
     TOOL = "TOOL"
     PERSONA = "PERSONA"
+    # D-04: the few-shot framing, loaded only when the request carries exemplars.
+    EXEMPLARS = "EXEMPLARS"
 
 
 def _strip_front_matter(text: str) -> str:

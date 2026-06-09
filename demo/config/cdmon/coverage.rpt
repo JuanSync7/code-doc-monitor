@@ -1,0 +1,32 @@
+---
+cdmon-report-version: 1.0.0
+kind: coverage
+repo: demo-taskflow
+ref: null
+generated-by: cdmon rpt
+---
+summary:
+  scanned_files: 7
+  documented_files: 4
+  waived_files: 2
+  ignored_files: 0
+  uncovered_files: 1
+  percent: 80.00
+units:
+  - unit: core
+    file: core.yaml
+    scanned: 4
+    documented: 2
+    percent: 66.67
+    uncovered:
+      - src/taskflow/core/scheduler.py
+  - unit: io
+    file: io.yaml
+    scanned: 3
+    documented: 2
+    percent: 100.00
+    uncovered: []
+undocumented:
+  - path: src/taskflow/core/scheduler.py
+    suggested_unit: core.yaml
+    reason: under dir-covered 'src/taskflow/core' and format '.py'

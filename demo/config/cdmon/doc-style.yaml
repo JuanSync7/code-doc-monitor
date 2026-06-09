@@ -1,0 +1,36 @@
+---
+# Frontmatter (REQUIRED).
+cdmon-config-version: "2.0.0"
+kind: doc-style-map
+updated: "2026-06-07"
+---
+# Body: one writing template per category. Each value names a stem under
+# templates/writing/<category>/<stem>.md (resolved against the demo repo root).
+
+# Defaults used for any document without an explicit mapping below.
+defaults:
+  document-type: api-reference
+  tone: precise
+  writing-style: reference-dense
+  vocabulary: engine-domain
+
+# Per-document overrides (doc = a document id declared in a unit file).
+mappings:
+  - doc: core-api
+    document-type: api-reference
+    tone: precise
+    writing-style: reference-dense
+    vocabulary: engine-domain
+  - doc: io-api
+    document-type: explanation
+    tone: precise
+    writing-style: reference-dense
+    vocabulary: engine-domain
+  # The user-guide doc exercises the OTHER template category values, so the demo
+  # now uses a non-default value in all four categories (document-type / tone /
+  # writing-style / vocabulary).
+  - doc: getting-started
+    document-type: tutorial
+    tone: friendly
+    writing-style: narrative
+    vocabulary: general

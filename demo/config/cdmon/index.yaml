@@ -1,0 +1,46 @@
+---
+# Frontmatter (REQUIRED): repo identity + provenance.
+cdmon-config-version: "2.0.0"
+repo: "demo-taskflow"
+generated-by: cdmon
+updated: "2026-06-07"
+---
+# Body: the globals that merge into one MonitorConfig + the ordered unit index.
+
+# Repo root RELATIVE TO this config directory. config/cdmon/ sits two levels
+# below the demo repo root (demo/), so the canonical "../.." lands on demo/.
+root: "../.."
+
+version: "2.0.0"
+apply_default: false
+
+# Offline mock backend (deterministic, no network) — the default for CI/demo.
+backend:
+  kind: mock
+
+# LangGraph remediation runtime (only used when backend.kind: agent).
+agent:
+  driver: claude-code
+
+# Standalone demo: emit review records to the local log only (M-02 wires the
+# central :33333 registration).
+central:
+  sink: none
+
+# Global coverage block: intentional, justified documentation gaps. The package
+# __init__.py files are pure re-export aggregators with no behavior of their own.
+coverage:
+  waive:
+    - path: "src/taskflow/core/__init__.py"
+      reason: "re-export aggregator; surface documented in core-api"
+    - path: "src/taskflow/io/__init__.py"
+      reason: "re-export aggregator; surface documented in io-api"
+
+# REQUIRED index of every unit file in this directory (stable, ordered). Every
+# *.yaml unit on disk MUST be listed (run `cdmon index` to regenerate).
+units:
+  - file: core.yaml
+  - file: io.yaml
+# Pointers to the ignore + doc-style files.
+ignore: ignore.yaml
+doc-style: doc-style.yaml
