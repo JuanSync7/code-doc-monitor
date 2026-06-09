@@ -1,0 +1,135 @@
+---
+# Frontmatter (REQUIRED): traceability metadata. `unit` MUST equal this file's
+# stem ("core"), or load_unit_file raises a loud ConfigError (K8).
+cdmon-config-version: "2.0.0"
+unit: core
+title: "code-doc-monitor engine core"
+owner: cdmon-team
+created: "2026-06-07"
+updated: "2026-06-07"
+---
+# Body: the coverage scope this unit owns + the documents it carries.
+
+# This unit owns the engine package root. The nested `agent` and `server` units
+# own their subdirectories; under Z-01a deepest-wins attribution a file directly
+# under code_doc_monitor (not under agent/ or server/) belongs to THIS unit.
+dir-covered:
+  - code_doc_monitor
+
+# Only .py files count toward coverage under dir-covered.
+source-files-format:
+  - ".py"
+
+documents:
+  # A landing page indexing the engineering docs below (no code_refs of its own).
+  # `index: true` activates the structural lint that this page must link EVERY
+  # other document — so adding a doc without linking it from here is caught.
+  - id: api-index
+    path: docs/api/index.md
+    audience: eng-guide
+    index: true
+    region_keys: [api-index]
+
+  - id: foundation
+    path: docs/api/foundation.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/config.py
+      - path: code_doc_monitor/_v2base.py    # leaf: shared v2 frontmatter primitives
+      - path: code_doc_monitor/docstyle.py
+      - path: code_doc_monitor/templates_v2.py
+      - path: code_doc_monitor/errors.py
+      - path: code_doc_monitor/schema.py     # SHARED — only the public types here
+        symbols: [Verdict, ProposedFix]
+
+  - id: pipeline
+    path: docs/api/pipeline.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/extract.py
+      - path: code_doc_monitor/manifest.py
+      - path: code_doc_monitor/blocks.py
+      - path: code_doc_monitor/drift.py
+
+  - id: remediation
+    path: docs/api/remediation.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/backends.py
+      - path: code_doc_monitor/monitor.py
+      - path: code_doc_monitor/heal.py
+      - path: code_doc_monitor/generate.py
+      - path: code_doc_monitor/sinks.py
+      - path: code_doc_monitor/reviewlog.py
+      - path: code_doc_monitor/schema.py      # SHARED — whole module here
+      - path: code_doc_monitor/ticket.py
+
+  # Coverage ownership: file/symbol discovery, the doc-coverage cross, and the
+  # generated coverage.rpt builder/renderer (CONFIG-V2 §3, N-04).
+  - id: coverage-system
+    path: docs/api/coverage-system.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/inventory.py
+      - path: code_doc_monitor/coverage.py
+      - path: code_doc_monitor/report.py
+
+  # Doc rendering surface: index region, HTML twins, layout lint + scaffolding.
+  - id: layout-build
+    path: docs/api/layout-build.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/index.py
+      - path: code_doc_monitor/build.py
+      - path: code_doc_monitor/layout.py
+
+  # The PR sync loop (EPIC C) + coverage-gap issues (EPIC H): should-sync gate +
+  # docs-PR open/update + the surface-gaps issue transports.
+  - id: pr-loop
+    path: docs/api/pr-loop.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/syncpr.py
+      - path: code_doc_monitor/pr.py
+      - path: code_doc_monitor/issues.py
+
+  # The central-system client (EPIC E/G): repo registry + record envelope, plus
+  # the server-side config-sync engine that reads a registered repo read-only.
+  - id: central-client
+    path: docs/api/central-client.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/registry.py
+      - path: code_doc_monitor/configsync.py
+    # context_refs (EDITOR E-01, additive/K6): generation-context "glance-through"
+    # references, NOT documented surface and NOT coverage. configsync reprojects a
+    # registered repo into the SQL rows the central server serves, so an author of
+    # this doc should glance at the server unit's doc to see the consuming surface.
+    context_refs:
+      - path: docs/api/server.md
+        note: "the central server that reads the config_documents/sync_runs rows configsync writes"
+
+  # Learning loop (EPIC F): near-duplicate detection + waiver/fix promotion.
+  - id: learning
+    path: docs/api/learning.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/similar.py
+      - path: code_doc_monitor/promotion.py
+
+  # Ops surface: the `cdmon` CLI command functions + the `doctor` self-check.
+  - id: ops
+    path: docs/api/ops.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/cli.py
+      - path: code_doc_monitor/doctor.py

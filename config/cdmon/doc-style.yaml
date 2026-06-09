@@ -1,0 +1,21 @@
+---
+# Frontmatter (REQUIRED).
+cdmon-config-version: "2.0.0"
+kind: doc-style-map
+updated: "2026-06-07"
+---
+# Body: one writing template per category. Each value names a stem under
+# templates/writing/<category>/<stem>.md (resolved against the repo root). Every
+# cdmon engineering doc is an eng-guide API reference, so the defaults below cover
+# all 12 documents; no per-document overrides are needed.
+
+# Defaults used for any document without an explicit mapping below.
+defaults:
+  document-type: api-reference
+  tone: precise
+  writing-style: reference-dense
+  vocabulary: engine-domain
+
+# Per-document overrides (doc = a document id declared in a unit file). None: the
+# defaults apply uniformly across the engineering docs.
+mappings: []

@@ -1,0 +1,34 @@
+---
+cdmon-report-version: 1.0.0
+kind: coverage
+repo: code-doc-monitor
+ref: null
+generated-by: cdmon rpt
+---
+summary:
+  scanned_files: 43
+  documented_files: 40
+  waived_files: 3
+  ignored_files: 0
+  uncovered_files: 0
+  percent: 100.00
+units:
+  - unit: agent
+    file: agent.yaml
+    scanned: 6
+    documented: 5
+    percent: 100.00
+    uncovered: []
+  - unit: core
+    file: core.yaml
+    scanned: 32
+    documented: 31
+    percent: 100.00
+    uncovered: []
+  - unit: server
+    file: server.yaml
+    scanned: 5
+    documented: 4
+    percent: 100.00
+    uncovered: []
+undocumented: []

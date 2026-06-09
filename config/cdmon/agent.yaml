@@ -1,0 +1,32 @@
+---
+# Frontmatter (REQUIRED): traceability metadata. `unit` MUST equal this file's
+# stem ("agent"), or load_unit_file raises a loud ConfigError (K8).
+cdmon-config-version: "2.0.0"
+unit: agent
+title: "code-doc-monitor remediation agent (LangGraph)"
+owner: cdmon-team
+created: "2026-06-07"
+updated: "2026-06-07"
+---
+# Body: the coverage scope this unit owns + the document it carries.
+
+# Nested under the core unit's code_doc_monitor: every .py under
+# code_doc_monitor/agent is attributed HERE (deepest-wins, Z-01a).
+dir-covered:
+  - code_doc_monitor/agent
+
+source-files-format:
+  - ".py"
+
+documents:
+  # The remediation agent (LangGraph workflow): backend, graph, prompts, runtime.
+  - id: agent-workflow
+    path: docs/api/agent-workflow.md
+    audience: eng-guide
+    region_keys: [symbols]
+    code_refs:
+      - path: code_doc_monitor/agent/backend.py
+      - path: code_doc_monitor/agent/graph.py
+      - path: code_doc_monitor/agent/prompts.py
+      - path: code_doc_monitor/agent/runtime.py
+      - path: code_doc_monitor/agent/state.py
