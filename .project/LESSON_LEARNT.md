@@ -1876,3 +1876,32 @@ own implementing modules are inside the thing being gated.
   fixture router, `GET /wiki` must be matched with `url.endsWith("/wiki")` placed
   BEFORE the broad `url.includes("/…")` substring branches, or a generic branch (or
   the default `[]`) swallows it and the page renders empty.
+
+## EPIC ASTRO (one Astro app under `frontend/`)
+
+- **The catch-all static mount MUST be the LAST route added.** Starlette matches
+  routes in declaration order, so `app.mount("/", StaticFiles(html=True))` placed at
+  the END of `create_app` (after every `@app.get`/`@app.post`) lets the API win and
+  only unclaimed paths fall through to the site. Mounting `/` EARLY (where the old
+  `/assets` mount lived) would shadow `/health`, `/repos`, `/openapi.json` — every
+  route. One `StaticFiles(directory=dist, html=True)` at `/` serves the whole build
+  (`/`→index.html, `/wiki/`→native pages, `/_astro/*`→assets) and stays backward
+  compatible with the old `/assets/*` tests (same dir, different subfolder).
+- **Astro's asset dir is `_astro/`, not `assets/`** (set via `build.assets`). The
+  serving change keys on this; tests assert `/_astro/<hash>.js`.
+- **Type-safe static dir: use `spa_index.parent`.** With `static_dir: Path | None`,
+  `Path(static_dir)` trips mypy inside the `if spa_index is not None` guard; since
+  `spa_index = static_dir / "index.html"`, `spa_index.parent` IS the dir and is
+  non-None — no cast needed.
+- **`astro check` first run is slow (~20s)** — it downloads the language server +
+  generates `.astro/types.d.ts` before type-checking (`build = astro check && astro
+  build`); CI must budget for it. Subsequent runs are fast.
+- **A React island proves the integration end-to-end.** `StatusPill` compiles to its
+  own `_astro/StatusPill.<hash>.js` chunk — visible proof `@astrojs/react` hydrates;
+  `client:load` on the tag is what triggers it. The console islands (ASTRO-03) follow
+  this pattern.
+- **Adding ANY test re-stales `TEST_WIKI.md`.** The test wiki catalogs every test from
+  its docstring, so the two new `test_server.py` cases made `cdmon wiki --check` fail
+  until `cdmon wiki` regenerated it — the dogfood gate covers tests, not just source.
+  (Watch chained `;` in CI probes: a stale-wiki nonzero is masked if a passing command
+  runs after it — use `&&` or check each exit code.)

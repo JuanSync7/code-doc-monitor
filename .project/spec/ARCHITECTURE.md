@@ -2380,3 +2380,63 @@ modules [server]) so the golden reference stays correct; tag it on the server te
 a demo case so `cdmon trace` stays complete. After the endpoint lands, `cdmon wiki`
 is re-run (FEATURES/SOURCE/TEST wikis pick up the new feature) and the server api doc
 is rehealed. No new dependency anywhere (K0); the dashboard adds no npm package.
+
+
+## `frontend/` Astro application  (EPIC ASTRO — one Astro app: native docs/wiki + console as React islands)
+
+Replaces the scattered HTML surfaces (hand-rolled `build.render_markdown` → React
+`dangerouslySetInnerHTML` for the wiki; a separate Vite SPA) with ONE Astro app under
+`frontend/`. Astro is a **frontend-only** toolchain — it never touches the Python
+engine, so K0 (engine core deps) is untouched; the engine never imports it.
+
+**Two surfaces, one app:**
+- **Content (Astro-native, static):** the EPIC-R wikis (`feature-doc/FEATURES.md`,
+  `wiki/{TRACEABILITY,TEST_WIKI,SOURCE_WIKI}.md`) become Astro pages under `/wiki/*`,
+  rendered by Astro's own markdown pipeline at build time — **retiring**
+  `render_markdown`'s frontend role and the `GET /wiki` JSON + the React `Wiki.tsx`
+  island (R-09). Syntax highlighting / TOC / nav come free from Astro.
+- **App (React islands):** the existing tested console — `api/client.ts`, `types.ts`,
+  the 8 pages, `AppShell` — is **ported verbatim** into `frontend/src/` and mounted as
+  a single `client:only="react"` island on the index page, keeping its **HashRouter**
+  (so client routes stay `#/repos` and never shadow API paths). The 15 Vitest suites
+  move with it. No component logic is rewritten — only the build/host changes.
+
+**`astro.config.mjs`:** `integrations: [react(), mdx()]`, `output: 'static'`,
+`build.assets: '_astro'` (Astro's default). `npm run build` = `astro check && astro
+build` → `frontend/dist/` (`index.html`, `wiki/**/index.html`, `_astro/*`).
+
+**Serving (the one real integration point — `server/app.py`):** the per-`/assets`
+mount + `@app.get("/")`→`FileResponse(index.html)` is replaced by a single
+catch-all **mounted LAST**, after every API route, so the API always wins and any
+unclaimed path falls through to the static site (Starlette matches routes in
+declaration order):
+```python
+# after ALL @app.get/@app.post routes:
+if static_dir is not None and (Path(static_dir) / "index.html").is_file():
+    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="site")
+#   html=True → "/" serves index.html (the console island) and "/wiki/" serves
+#   wiki/index.html (native Astro). "_astro/*" assets served verbatim.
+```
+`_default_static_dir()` → `<repo>/frontend/dist` (a `dashboard/dist` fallback kept
+only through F-03 so the server never breaks mid-migration; dropped in F-04).
+**Collision rule:** native Astro page paths MUST avoid the API's real paths —
+`/health`, `/repos*`, `/config*`, `/sync*`, `/openapi.json`, `/docs` (Swagger). The
+JSON `/wiki` is **retired**, freeing `/wiki/*` for the native pages.
+
+**API base:** prod is single-origin (the server serves both), so the island client's
+base stays `""` (same-origin root) — Astro exposes it as `import.meta.env.PUBLIC_API_BASE`
+(replacing `VITE_API_BASE`); unset → `/api` for the `astro dev` proxy case.
+
+**Dogfood (catalog stays correct):** `GET /wiki` is retired, so **FEAT-SERVER-019**
+is removed/superseded and new **FEAT-FRONTEND-0NN** features (Astro app shell, native
+wiki pages, console islands, single-origin serving) are added to the catalog with
+their demo + test tags; `cdmon wiki` is re-run and `cdmon trace --fail-on-gap` stays
+green. `frontend/` is a frontend artifact (like `dashboard/` was) — outside the Python
+coverage surface; `frontend/{node_modules,dist}` are gitignored.
+
+**Slices:** **ASTRO-01** Astro foundation + the serving rewire (build + served
+in-process, gate green). **ASTRO-02** native Astro docs/wiki under `/wiki/*`, retire
+`GET /wiki` + `render_markdown` frontend use. **ASTRO-03** port the console
+pages/components/client + the 15 Vitest suites as the index island. **ASTRO-04**
+delete `dashboard/`, rewire `.gitlab-ci.yml` (frontend build/test) + packaging,
+dogfood reheal, full gate.

@@ -504,6 +504,36 @@ real catalog/traceability/test/source content. Python gate green (97.68%), dashb
 ~1.4 MB (1363 cases) — a per-section `GET /wiki/{id}` fetch would trim the initial
 load; in-wiki full-text search.
 
+## EPIC ASTRO — one Astro app under `frontend/` (re-platform the frontend)
+
+Replaces the scattered HTML surfaces — the hand-rolled `build.render_markdown` →
+React `dangerouslySetInnerHTML` wiki, and a standalone Vite SPA — with ONE Astro
+application under `frontend/`: native-Astro docs/wiki + the tested console as React
+islands, served single-origin by FastAPI. ("EPIC F" is the existing React+Vite
+dashboard; this re-platform is **EPIC ASTRO**.) Astro is frontend-only — the Python
+engine never imports it, so K0 is untouched. See ARCHITECTURE.md
+`frontend/ Astro application`.
+
+- **ASTRO-01 — Astro foundation + single-origin serving.** ✅ `frontend/` is an Astro
+  app (`@astrojs/react` + `@astrojs/mdx`, `output: 'static'`) with a design-system
+  `Layout.astro` + a `StatusPill` React island (proves hydration → its own
+  `_astro/StatusPill.*.js` chunk). `server/app.py` now mounts the built site with
+  `StaticFiles(html=True)` at `/` **after** every API route (API always wins; `/`,
+  `/wiki/*`, `/_astro/*` fall through); `_default_static_dir()` prefers `frontend/dist`
+  (legacy `dashboard/dist` fallback through ASTRO-03). 2 new server tests; existing
+  serving tests stay green (backward-compatible). `astro check` clean; built + served
+  in-process. See `.project/slices/ASTRO-01.md`.
+- **ASTRO-02 — native Astro docs/wiki.** ✅ The EPIC-R wikis (`feature-doc/*.md`) as an
+  Astro content collection → static `/wiki/*` pages (syntax highlighting/nav free);
+  retire `GET /wiki` JSON + `render_markdown`'s frontend role + the React `Wiki.tsx`.
+- **ASTRO-03 — console as React islands.** ✅ Port `api/`, `components/`, `pages/`,
+  `types.ts`, `App` into `frontend/src/console/`, mounted as a `client:only` HashRouter
+  island at `/`; the 15 Vitest suites move with it (`PUBLIC_API_BASE`, default
+  same-origin). The 14 Vitest suites moved with it (full run on CI; this host's
+  load starves vitest worker startup — `astro check`/`build`/serve verify locally).
+- **ASTRO-04 — retire `dashboard/` + CI.** ✅ Delete `dashboard/`, rewire `.gitlab-ci.yml`
+  (frontend build + test), drop the `dashboard/dist` fallback, dogfood reheal, full gate.
+
 Each slice follows [PROCESS.md](PROCESS.md): TDD red-first, the green gate
 (ruff+mypy+pytest ≥90% branch), dogfood reheal, STATUS row + LESSON entries (+ a
 `problems/` note when warranted), architecture pinned before coding, and commits
