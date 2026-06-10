@@ -2,7 +2,7 @@
 
 Generated from the package inventory crossed against the golden catalog — **do not hand-edit**. Run `cdmon wiki` (R-08) to regenerate.
 
-**39 public modules**, 0 without a catalogued feature.
+**42 public modules**, 0 without a catalogued feature.
 
 ## `_v2base`
 
@@ -79,7 +79,7 @@ Generated from the package inventory crossed against the golden catalog — **do
 ## `errors`
 
 - Path: `errors.py`
-- Public symbols: `BackendError`, `CatalogError`, `CodeDocMonitorError`, `ConfigError`, `DriftError`, `ExtractionError`, `InventoryError`, `SchemaError`, `SyncError`, `TransportError`, `__all__`
+- Public symbols: `BackendError`, `CatalogError`, `CodeDocMonitorError`, `ConfigError`, `DriftError`, `ExtractionError`, `InventoryError`, `SchemaError`, `SecretError`, `SyncError`, `TransportError`, `__all__`
 - Implemented by: `FEAT-CONFIG-012`
 
 ## `extract`
@@ -99,6 +99,18 @@ Generated from the package inventory crossed against the golden catalog — **do
 - Path: `generate.py`
 - Public symbols: `ApplyFixResult`, `GenerateResult`, `__all__`, `apply_edits_to_disk`, `apply_record_fix`
 - Implemented by: `FEAT-CONFIGV2-013`
+
+## `gitauth`
+
+- Path: `gitauth.py`
+- Public symbols: `__all__`, `github_app_jwt`, `mint_github_installation_token`, `mint_gitlab_oauth_token`, `mint_provider_token`
+- Implemented by: `FEAT-GITSYNC-003`
+
+## `gitfetch`
+
+- Path: `gitfetch.py`
+- Public symbols: `RemoteSpec`, `__all__`, `cloned_repo`
+- Implemented by: `FEAT-GITSYNC-001`
 
 ## `heal`
 
@@ -145,8 +157,8 @@ Generated from the package inventory crossed against the golden catalog — **do
 ## `pr`
 
 - Path: `pr.py`
-- Public symbols: `GitLabTransport`, `MergeRequestPlan`, `PRTransport`, `__all__`, `open_docs_pr`, `plan_docs_pr`
-- Implemented by: `FEAT-PR-004`, `FEAT-PR-005`, `FEAT-PR-006`
+- Public symbols: `GitHubTransport`, `GitLabTransport`, `MergeRequestPlan`, `PRTransport`, `__all__`, `open_docs_pr`, `plan_docs_pr`
+- Implemented by: `FEAT-GITSYNC-004`, `FEAT-PR-004`, `FEAT-PR-005`, `FEAT-PR-006`
 
 ## `promotion`
 
@@ -178,10 +190,16 @@ Generated from the package inventory crossed against the golden catalog — **do
 - Public symbols: `ProposedFix`, `Resolution`, `ResolutionRecord`, `ReviewRecord`, `Verdict`, `__all__`, `new_record_id`, `resolution_record_schema`, `review_record_schema`
 - Implemented by: `FEAT-RECORD-001`, `FEAT-RECORD-002`, `FEAT-RECORD-003`, `FEAT-RECORD-004`, `FEAT-RECORD-005`, `FEAT-RECORD-006`
 
+## `secrets`
+
+- Path: `secrets.py`
+- Public symbols: `SecretBox`, `__all__`, `secret_box_from_env`
+- Implemented by: `FEAT-GITSYNC-002`
+
 ## `server`
 
 - Path: `server/__init__.py`
-- Public symbols: `AddCodeRefEdit`, `ApplyFixResponse`, `Base`, `ConfigCodeRef`, `ConfigCodeRefRow`, `ConfigContextRef`, `ConfigDocument`, `ConfigDocumentRow`, `ConfigEdit`, `ConfigEditRow`, `CoverageIngest`, `CoverageSnapshotRow`, `CreateDocEdit`, `DocStyleOptions`, `DocumentTree`, `EditCodeRef`, `EditContextRef`, `EditDocStyle`, `EditableConfigTree`, `EditableDocument`, `GenerateRequest`, `GenerateResponse`, `InMemoryStore`, `RecordRow`, `RegisteredRepo`, `RemoveCodeRefEdit`, `RepoHealth`, `RepoRow`, `RepoStatus`, `RepoTelemetry`, `ResolutionRow`, `SetContextRefsEdit`, `SetDocStyleEdit`, `ShapeStat`, `SqlStore`, `Store`, `StoredConfigEdit`, `SyncRequest`, `SyncRun`, `SyncRunRow`, `WIKI_SECTIONS`, `__all__`, `build_standalone_app`, `build_standalone_store`, `create_all`, `create_app`, `effective_identity`, `engine_from_url`, `hash_token`, `main`, `resolve_repo_id`, `store_from_env`
+- Public symbols: `AddCodeRefEdit`, `ApplyFixResponse`, `Base`, `ConfigCodeRef`, `ConfigCodeRefRow`, `ConfigContextRef`, `ConfigDocument`, `ConfigDocumentRow`, `ConfigEdit`, `ConfigEditRow`, `CoverageIngest`, `CoverageSnapshotRow`, `CreateDocEdit`, `DocStyleOptions`, `DocsPrRequest`, `DocumentTree`, `EditCodeRef`, `EditContextRef`, `EditDocStyle`, `EditableConfigTree`, `EditableDocument`, `GenerateRequest`, `GenerateResponse`, `InMemoryStore`, `RecordRow`, `RegisteredRepo`, `RemoveCodeRefEdit`, `RepoHealth`, `RepoRow`, `RepoStatus`, `RepoTelemetry`, `ResolutionRow`, `SetContextRefsEdit`, `SetDocStyleEdit`, `ShapeStat`, `SqlStore`, `Store`, `StoredConfigEdit`, `SyncRequest`, `SyncRun`, `SyncRunRow`, `WIKI_SECTIONS`, `__all__`, `build_standalone_app`, `build_standalone_store`, `create_all`, `create_app`, `effective_identity`, `engine_from_url`, `hash_token`, `main`, `resolve_repo_id`, `store_from_env`
 - Implemented by: `FEAT-SERVER-001`, `FEAT-SERVER-002`, `FEAT-SERVER-003`, `FEAT-SERVER-004`, `FEAT-SERVER-005`, `FEAT-SERVER-006`, `FEAT-SERVER-007`, `FEAT-SERVER-008`, `FEAT-SERVER-009`, `FEAT-SERVER-010`, `FEAT-SERVER-011`, `FEAT-SERVER-012`, `FEAT-SERVER-013`, `FEAT-SERVER-014`, `FEAT-SERVER-015`, `FEAT-SERVER-016`, `FEAT-SERVER-019`
 
 ## `similar`

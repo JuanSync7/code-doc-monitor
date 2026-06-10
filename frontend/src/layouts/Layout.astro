@@ -1,8 +1,8 @@
 ---
-// The document shell for the whole frontend (EPIC ASTRO): the design system
-// (tokens, typography, base + .prose styles) plus a gradient-mesh background.
-// Pages slot their content; the console island (ASTRO-03) and the native wiki
-// pages (ASTRO-02) both render inside this.
+// The document shell for the whole frontend (EPIC ASTRO). Shares the console's
+// clean LIGHT design language (Linear/Vercel-style: near-white canvas, emerald
+// accent, Schibsted/Hanken type) so the native wiki pages look identical to the
+// main console — no dark theme, no background grid, just simple white.
 interface Props {
   title?: string;
   description?: string;
@@ -25,37 +25,37 @@ const {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Schibsted+Grotesk:wght@500;600;700;800&display=swap"
     />
   </head>
   <body>
-    <div class="bg-mesh" aria-hidden="true"></div>
     <slot />
     <style is:global>
       :root {
-        --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-        --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        --font-display: "Schibsted Grotesk", "Hanken Grotesk", system-ui, sans-serif;
+        --font-sans: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
         --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-        --bg: #0a0e14;
-        --surface: #11161f;
-        --surface-2: #161d29;
-        --border: #232c3b;
-        --border-soft: #1b2230;
-        --text: #e6edf3;
-        --text-dim: #8b97a7;
-        --text-faint: #5b6677;
+        /* Light surfaces (match the console's index.css palette). */
+        --bg: #fafbfc;
+        --surface: #ffffff;
+        --surface-2: #f4f6f8;
+        --surface-3: #eef1f4;
+        --border: #e7eaee;
+        --border-soft: #eef1f4;
+        --text: #111827;
+        --text-dim: #5b6573;
+        --text-faint: #939dab;
 
-        --accent: #34d399;
-        --accent-cyan: #22d3ee;
-        --accent-ink: #042f23;
-        --warn: #fbbf24;
-        --danger: #f87171;
+        --accent: #0d9f6e;
+        --accent-strong: #0a7f57;
+        --accent-tint: #e8f7f0;
 
-        --radius: 14px;
-        --radius-sm: 9px;
-        --shadow: 0 18px 50px -24px rgba(0, 0, 0, 0.8);
-        --ring: 0 0 0 1px var(--border);
+        --radius: 10px;
+        --radius-sm: 8px;
+        --shadow: 0 1px 3px rgba(17, 24, 39, 0.08), 0 12px 28px -12px rgba(17, 24, 39, 0.16);
+
+        color-scheme: light;
       }
 
       * {
@@ -76,39 +76,16 @@ const {
         text-rendering: optimizeLegibility;
       }
 
-      /* Atmosphere: two soft accent glows + a faint engineering grid. */
-      .bg-mesh {
-        position: fixed;
-        inset: 0;
-        z-index: -1;
-        pointer-events: none;
-        background:
-          radial-gradient(
-            60rem 40rem at 12% -8%,
-            rgba(52, 211, 153, 0.1),
-            transparent 60%
-          ),
-          radial-gradient(
-            50rem 38rem at 100% 0%,
-            rgba(34, 211, 238, 0.08),
-            transparent 55%
-          ),
-          linear-gradient(transparent 0 1px, transparent 1px) 0 0 / 100% 64px,
-          linear-gradient(90deg, var(--border-soft) 0 1px, transparent 1px) 0 0 /
-            64px 100%;
-        mask-image: linear-gradient(to bottom, black, transparent 70%);
-        opacity: 0.5;
-      }
-
       h1,
       h2,
       h3,
       h4 {
         font-family: var(--font-display);
         font-weight: 700;
-        letter-spacing: -0.02em;
-        line-height: 1.12;
+        letter-spacing: -0.018em;
+        line-height: 1.15;
         margin: 0 0 0.4em;
+        color: var(--text);
       }
 
       a {
@@ -124,34 +101,37 @@ const {
         font-family: var(--font-mono);
         font-size: 0.92em;
       }
-
       ::selection {
-        background: var(--accent);
-        color: var(--accent-ink);
+        background: var(--accent-tint);
+        color: var(--accent-strong);
       }
 
-      /* The eyebrow/label treatment reused across the app chrome. */
       .eyebrow {
         font-family: var(--font-mono);
         font-size: 0.72rem;
-        letter-spacing: 0.18em;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
         color: var(--text-faint);
       }
 
-      /* Readable column for native-Astro wiki/doc pages (ASTRO-02). */
+      /* Readable column for the native-Astro wiki/doc pages — light, like the
+         console: dark ink on white, hairline borders, soft code blocks. */
       .prose {
-        max-width: 76ch;
+        max-width: 78ch;
         color: var(--text);
       }
       .prose :where(p, li) {
-        color: #cdd6e2;
+        color: #2b3340;
       }
       .prose :where(h1, h2, h3) {
         scroll-margin-top: 5rem;
       }
+      .prose a {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
       .prose pre {
-        background: var(--surface);
+        background: var(--surface-2);
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
         padding: 1rem 1.1rem;
@@ -159,7 +139,7 @@ const {
       }
       .prose :not(pre) > code {
         background: var(--surface-2);
-        border: 1px solid var(--border-soft);
+        border: 1px solid var(--border);
         border-radius: 5px;
         padding: 0.12em 0.4em;
       }
@@ -175,7 +155,7 @@ const {
         text-align: left;
       }
       .prose th {
-        background: var(--surface);
+        background: var(--surface-2);
         font-family: var(--font-mono);
         font-weight: 600;
       }

@@ -1,11 +1,11 @@
 ---
 cdm:
   audience: eng-guide
-  fingerprint: 1ec00614e7c0c97f
+  fingerprint: 85fb2f4ab3048aa9
   fingerprint_tiers:
-    composite: 1ec00614e7c0c97f
-    docstring: 9dd95ce256018209
-    signature: 988aa709986b08b6
+    composite: 85fb2f4ab3048aa9
+    docstring: 1588ec1c15b1e7b4
+    signature: 2181990b0f92e89a
   region_anchors:
     symbols:
     - 00652c5f721d5ef6
@@ -23,6 +23,7 @@ cdm:
     - 0b390c979393f83b
     - 0d9808ab184991ce
     - 0dad8198442ebc15
+    - 147fda13f62e8d29
     - 16fa33fa4ac0dc4e
     - 17019d426b379415
     - 19599a22448b1545
@@ -126,7 +127,7 @@ cdm:
     - fd87e7b303770609
     - ff51b2032355ac8b
   region_hashes:
-    symbols: e6f6238084eb996c
+    symbols: 6944484155f08334
   schema_version: 1.0.0
 ---
 # code-doc-monitor — foundation (engineering reference)
@@ -187,6 +188,7 @@ cdm:
 | RegionTemplate | class | class RegionTemplate(BaseModel) |
 | STYLE_CATEGORIES | variable | STYLE_CATEGORIES: tuple[tuple[str, str], ...] = ... |
 | SchemaError | class | class SchemaError(CodeDocMonitorError) |
+| SecretError | class | class SecretError(CodeDocMonitorError) |
 | SyncError | class | class SyncError(CodeDocMonitorError) |
 | TransportError | class | class TransportError(CodeDocMonitorError) |
 | UNIT_TEMPLATE | variable | UNIT_TEMPLATE = ... |

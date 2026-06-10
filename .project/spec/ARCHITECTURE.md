@@ -2440,3 +2440,123 @@ in-process, gate green). **ASTRO-02** native Astro docs/wiki under `/wiki/*`, re
 pages/components/client + the 15 Vitest suites as the index island. **ASTRO-04**
 delete `dashboard/`, rewire `.gitlab-ci.yml` (frontend build/test) + packaging,
 dogfood reheal, full gate.
+
+
+## EPIC GIT — server-side git sync & provider credentials  (STEP 0 + PHASE 1 + PHASE 2)
+
+The central server can today only sync a repo that is ALREADY on its disk
+(`configsync.run_sync(local_path, …)`); there is **no clone/fetch anywhere**, and
+the only PR write path is `GitLabTransport`. EPIC GIT closes both gaps so the
+server can sync **and** open docs-PRs against a GitHub/GitLab repo it does NOT
+hold locally, authenticating with a per-repo credential. Three layers, each
+additive (K6) and reusing the prior's seams:
+
+* **STEP 0 — clone-on-demand (`gitfetch.py`).** Materialize a remote repo into a
+  throwaway temp tree, then run the UNCHANGED `run_sync` over it (`mode="local"`,
+  the clone is checked out at the default branch). `configsync.py` is NOT touched
+  (K9). The git side effect is one injected subprocess leaf (K4); teardown +
+  token shred in `finally` (K1).
+* **PHASE 1 — per-repo scoped token.** A provider PAT/project-token, **sealed at
+  rest** (AES-GCM, `secrets.py`) — the conscious fork from the hash-only token
+  model (a git credential must be REPLAYED, so it cannot be hashed). It drives
+  clone + a new `GitHubTransport` + a `POST /repos/{id}/docs-pr` route.
+* **PHASE 2 — GitHub App / GitLab OAuth (`gitauth.py`).** Mint a SHORT-LIVED token
+  from a stored App/OAuth credential; the hot token is never persisted (recovers
+  most of the at-rest invariant Phase 1 weakened). Reuses Phase 1's `RemoteSpec`
+  + clone seam + transports verbatim — only the credential SOURCE changes. GitHub
+  App JWT needs **RS256 (stdlib cannot do it)** → `cryptography` (the one K0
+  asterisk, confined to the `[server]` extra).
+
+### `gitfetch.py`  (STEP 0 — clone-on-demand; stdlib subprocess behind one injected leaf — K0/K1/K4/K8)
+
+```python
+class RemoteSpec(BaseModel):          # frozen, extra=forbid
+    remote_url: str                   # https://github.com/owner/repo(.git) | https://gitlab.com/group/proj(.git)
+    provider: Literal["github", "gitlab"]
+    default_branch: str = "main"
+
+class _Cloner(Protocol):              # the ONE network leaf (K4)
+    # clone spec.remote_url@default_branch into dest, authenticating with `secret`
+    # WITHOUT putting it in argv or the URL (GIT_ASKPASS env + a username-only URL).
+    def clone(self, spec: RemoteSpec, secret: str | None, dest: Path) -> None: ...
+
+class _GitCloner:                     # real leaf; subprocess.run(["git","clone","--depth=1","--branch",b,url,dest], env=…)
+    def clone(self, spec, secret, dest) -> None: ...   # token never in argv; file:// path covered, https+token leaf is the pragma
+
+@contextmanager
+def cloned_repo(spec: RemoteSpec, secret: str | None, *, cloner: _Cloner | None = None) -> Iterator[Path]:
+    # mkdtemp("cdmon-fetch-") → cloner.clone(...) → yield <tmp>/repo → finally rmtree + best-effort secret shred (K1).
+    # A clone failure is a loud SyncError with the secret SCRUBBED from stderr (K8).
+```
+The server route does `with cloned_repo(spec, secret) as tree: run_sync(tree, repo_id, mode="local", default_branch=spec.default_branch, now=now)`. Tests inject a fake `cloner` (copies a fixture tree) for orchestration/teardown/token-not-in-argv, plus a REAL `file://` clone system test that exercises `_GitCloner` with no network (EDR-safe). `_build_clone_argv(spec, dest) -> list[str]` is a pure helper unit-tested to prove the secret is absent from argv.
+
+### `secrets.py`  (PHASE 1 — at-rest secret sealing; `cryptography` in the `[server]` extra ONLY — the one K0 asterisk)
+
+```python
+class SecretError(CodeDocMonitorError): ...   # errors.py — loud on a missing/short KEK or a tampered ciphertext (K8)
+
+class SecretBox:                      # AES-256-GCM (cryptography.hazmat AESGCM)
+    def __init__(self, key: bytes) -> None: ...        # key MUST be 32 bytes (loud SecretError otherwise)
+    def seal(self, plaintext: str) -> bytes: ...       # 12-byte random nonce ‖ ciphertext+tag; returns opaque bytes
+    def open_secret(self, sealed: bytes) -> str: ...   # splits nonce, decrypts; tampered/short → SecretError
+
+def secret_box_from_env(env: str = "CDMON_SECRET_KEY") -> SecretBox:
+    # reads a base64 32-byte KEK from $CDMON_SECRET_KEY; loud SecretError if unset/short/not base64.
+```
+Engine core never imports `secrets.py` (it lives behind the `[server]` extra; only `app.py`/tests import it), so the core dependency surface is unchanged (K0). The KEK is a single env-provided key (no KMS) — sufficient for single-org self-hosting; rotation is a manual re-encrypt (LESSON).
+
+### identity + payload additive fields  (PHASE 1, K6 — appended LAST so field order is untouched)
+
+* `sinks.RepoIdentity` (+2, both default `None`): `provider: Literal["github","gitlab"] | None`, `remote_url: str | None`. (The existing `repo_url` stays the inert *browse* URL — `remote_url` is the *clone/API* URL; the distinction is documented on the field.) These ride INSIDE the `RepoRow.payload` JSON → **no DB migration** (K6 additive round-trip).
+* `registry.RegistrationPayload` (+1, default `None`): `provider_secret: str | None` — a WRITE-ONLY plaintext credential the client mints at register, exactly mirroring `auth_token`. The server SEALS it (never stores plaintext); it is excluded from the stored payload JSON.
+
+### Store provider-secret seam  (PHASE 1 — `server/store.py` Protocol + `InMemoryStore` + `server/db.py` `SqlStore`)
+
+```python
+# store.Store (Protocol) gains — parallel to repo_token_hash:
+def set_provider_secret(self, repo_id: str, sealed: bytes) -> None: ...   # persist OPAQUE sealed bytes
+def repo_provider_secret(self, repo_id: str) -> bytes | None: ...         # the sealed bytes, or None (open/unknown)
+```
+Sealing happens at the ROUTE (`app.py`, the crypto-allowed `[server]` layer); the store persists opaque bytes and **never imports `cryptography`** (keeps `store.py` pure pydantic/stdlib). `db.RepoRow` gains `provider_secret: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)` (BYTEA/​BLOB), and `SqlStore.add_repo` extends the sanitize to `exclude={"auth_token", "provider_secret"}`. **Alembic `0005_repo_provider_secret`** (`down_revision="0004_config_edits"`) adds the one nullable column via `op.add_column` in batch mode (SQLite + Postgres); up/down round-trip gate-tested on temp SQLite.
+
+### `pr.py` GitHubTransport  (PHASE 1 — sibling to GitLabTransport; stdlib urllib behind one injected leaf — K0/K4)
+
+```python
+class _GitHubHttp(Protocol):
+    def request(self, method: str, url: str, *, body: dict | None, token: str) -> dict: ...
+class _UrllibGitHubHttp:              # Authorization: Bearer <token>; Accept: application/vnd.github+json (real urlopen = pragma)
+    ...
+class GitHubTransport:                # submit(plan) does the ATOMIC git-data flow (no local checkout):
+    # 1) GET   /repos/{o}/{r}/git/ref/heads/{target}            → base commit sha
+    # 2) GET   /repos/{o}/{r}/git/commits/{base}                → base tree sha
+    # 3) POST  /repos/{o}/{r}/git/trees {base_tree, tree:[{path,mode:100644,type:blob,content}]}  → new tree sha
+    # 4) POST  /repos/{o}/{r}/git/commits {message, tree, parents:[base]}                          → new commit sha
+    # 5) POST  /repos/{o}/{r}/git/refs {ref:"refs/heads/<source>", sha:new}                        → branch
+    # 6) POST  /repos/{o}/{r}/pulls {title, head:<source>, base:<target>, body}                    → PR  (returns its JSON)
+    def __init__(self, *, owner: str, repo: str, token: str, api_url: str = "https://api.github.com", http: _GitHubHttp | None = None): ...
+    @classmethod
+    def from_env(cls, *, repo_env="GITHUB_REPOSITORY", token_env="CDMON_GITHUB_TOKEN", api_env="GITHUB_API_URL"): ...
+    @classmethod
+    def from_repo(cls, remote_url: str, token: str, *, api_url: str | None = None) -> GitHubTransport: ...  # parse owner/repo from URL
+```
+`GitLabTransport.from_repo(remote_url, token, *, api_url=None)` is the symmetric classmethod (parse the project path → URL-encoded `project_id`). A shared `pr._parse_remote(remote_url) -> (host, owner, repo)` does the parsing (loud `TransportError` on a non-provider URL → SSRF allowlist hook).
+
+### server routes  (PHASE 1 — `server/app.py`, ENV knobs only; no `config/cdmon/server.yaml` edit)
+
+* **`POST /repos/{id}/sync`** — when the stored identity has NO `local_path` but DOES carry `provider` + `remote_url` AND a sealed `provider_secret` exists, the route opens the secret (`secret_box_from_env`), `cloned_repo(RemoteSpec(...), token)`s, and `run_sync`s the clone (`mode="local"`); otherwise the existing local-path path is unchanged. SSRF: `remote_url` host must be on the provider allowlist.
+* **`POST /repos/{id}/docs-pr`** — NEW, token-gated by the existing `_verify_token` (E-06). Clones, `syncpr.sync_pr` heals → `plan_docs_pr`, builds `{GitHub,GitLab}Transport.from_repo(remote_url, token)` by `provider`, `open_docs_pr(...)`; `?dry_run=true` returns the plan without a provider call. Returns the MR/PR response (or `null` when nothing healed). The token is scrubbed from any error surface.
+
+### `gitauth.py`  (PHASE 2 — mint short-lived App/OAuth tokens behind one injected leaf — `cryptography` RS256)
+
+```python
+class _TokenExchangeHttp(Protocol):
+    def request(self, method: str, url: str, *, body: dict | None, headers: dict[str, str]) -> dict: ...
+def github_app_jwt(app_id: str, private_key_pem: str, *, now: int) -> str: ...        # RS256 JWT (cryptography), iat/exp from injected `now` (K10)
+def mint_github_installation_token(app_id, private_key_pem, installation_id, *, now, http=None) -> str: ...
+def mint_gitlab_oauth_token(...) -> str: ...
+# transports gain `from_credential(remote_url, credential, *, now, http=None)` alongside from_repo;
+# routes resolve a MINTED token when the repo carries provider + installation_id (no stored provider_secret needed).
+```
+`RepoIdentity` gains additive `installation_id: str | None = None` (and the App credential — app_id + the PEM — is the SAME sealed-secret column, distinguished by a `provider_kind`). Only the credential SOURCE differs from Phase 1; `RemoteSpec`/`cloned_repo`/`GitHubTransport`/`GitLabTransport`/the routes are reused verbatim. Air-gapped GHE/GitLab falls back to SSH here (only if a concrete adopter needs it).
+
+**Slices:** **GIT-00** clone-on-demand (`gitfetch.py`). **GIT-01** `secrets.py` AES-GCM + `SecretError`. **GIT-02** identity/payload fields + Store provider-secret seam + Alembic 0005. **GIT-03** `GitHubTransport` + `from_repo` on both transports. **GIT-04** remote `/sync` + `POST /docs-pr` route. **GIT-05** `gitauth.py` App/OAuth token exchange + `from_credential`. Each: TDD red-first, green gate (ruff+mypy+pytest ≥90% branch), Store-parity over InMemoryStore AND SqlStore where the store is touched, dogfood reheal, STATUS row + LESSON.

@@ -1,11 +1,11 @@
 ---
 cdm:
   audience: eng-guide
-  fingerprint: d15ecc8a04677da0
+  fingerprint: 9a623c5ad9bfa11a
   fingerprint_tiers:
-    composite: d15ecc8a04677da0
-    docstring: d1e4603faeb2775c
-    signature: 7f932884e9791180
+    composite: 9a623c5ad9bfa11a
+    docstring: ee1d789e466fc7cd
+    signature: c24012c182840bee
   region_anchors:
     symbols:
     - 01235c35a6ca9c5a
@@ -25,6 +25,7 @@ cdm:
     - 1103be93877e8ee3
     - 11192a3ac2c801a0
     - 11c8b69ce1ef8fa5
+    - 11eece7cb3f29969
     - 14bee4e49a9e3aac
     - 1749c6d35103f236
     - 1849f8779eeb8a48
@@ -45,16 +46,20 @@ cdm:
     - 331fcb711b55798f
     - 337ab9db6bad7258
     - 369c045a16e5d732
+    - 373c1fae3f8a3746
     - 37be54e1ed20d07e
     - 39af45b6529451c2
     - 3adf537f9d4ef790
     - 3e373817e4dd55ad
     - 3ff4b656757aa5ad
     - 413803e6bb0f7787
+    - 44162d384b47b10d
     - 4507f4be9071d9ac
+    - 4664661bb8b74e6e
     - 466b37ad4e6f8df6
     - 4683b7ff2ad716ef
     - 47060d549acbbd29
+    - 474aea2ca72377cb
     - 47b7ab5158c08602
     - 4859fc3890810652
     - 48e7f4aee970761d
@@ -72,6 +77,7 @@ cdm:
     - 5b32fe40a1173dc0
     - 60980aca9bc67ef9
     - 60dcd28f23471391
+    - 62220fc9a2cf72fd
     - 63716b31cca0678a
     - 64cfdd20c9f4e98a
     - 6505cc5091801d16
@@ -84,6 +90,7 @@ cdm:
     - 6f9b25f7411f15c2
     - 71613e3abdfdcdb1
     - 726858785015ad76
+    - 7379838f70184884
     - 76dafbeb7152f48e
     - 7718c1f874b600bf
     - 77a49c9a8c63382b
@@ -97,10 +104,12 @@ cdm:
     - 85300682e54b5ea1
     - 89e835f3c782a294
     - 8a290d89bd71388a
+    - 8f071a0ee4ad3809
     - 91e25a1bd843b417
     - 932c919339ac3a6d
     - 95027cf1e5bce55b
     - 9877e4d3ed2473bb
+    - 99acad598cfc3747
     - 99e2ad2b1f73cdf2
     - 9a3b73a7aaa6fb99
     - 9bac928da4b1f265
@@ -112,6 +121,7 @@ cdm:
     - a56f31e61f8741ce
     - abb903669fd3f39a
     - b0621470d5ce4290
+    - b1a56b8efcb08643
     - b3127a5e9ffc9535
     - b3248dc191833eee
     - b70299153e99744b
@@ -137,6 +147,7 @@ cdm:
     - d9d91a8257975edf
     - da9da02db1d5d5e0
     - db401b971ca3b2f9
+    - de0ca6e8403d2e27
     - de106aa8e1278a0c
     - e435b85a94b85b45
     - e8b7003029e54d54
@@ -148,7 +159,7 @@ cdm:
     - f7e36c5633592985
     - fa2f6597462ddabd
   region_hashes:
-    symbols: 928c789cee219f8a
+    symbols: bd6d98d9ef568c3d
   schema_version: 1.0.0
 ---
 # server
@@ -174,6 +185,7 @@ cdm:
 | CoverageSnapshotRow | class | class CoverageSnapshotRow(Base) |
 | CreateDocEdit | class | class CreateDocEdit(BaseModel) |
 | DocStyleOptions | class | class DocStyleOptions(BaseModel) |
+| DocsPrRequest | class | class DocsPrRequest(BaseModel) |
 | DocumentTree | class | class DocumentTree(BaseModel) |
 | EditCodeRef | class | class EditCodeRef(BaseModel) |
 | EditContextRef | class | class EditContextRef(BaseModel) |
@@ -200,8 +212,10 @@ cdm:
 | InMemoryStore.mark_config_edits | method | def mark_config_edits(self, repo_id: str, edit_ids: list[str], status: str, *, at: str) -> None |
 | InMemoryStore.records_for | method | def records_for(self, repo_id: str, *, verdict: str \| None = None, drift_kind: str \| None = None, audience: str \| None = None, doc_id: str \| None = None, limit: int \| None = None, offset: int = 0) -> list[ReviewRecord] |
 | InMemoryStore.replace_config | method | def replace_config(self, repo_id: str, sync_kind: str, documents: list[ConfigDocument], code_refs: list[ConfigCodeRef]) -> None |
+| InMemoryStore.repo_provider_secret | method | def repo_provider_secret(self, repo_id: str) -> bytes \| None |
 | InMemoryStore.repo_token_hash | method | def repo_token_hash(self, repo_id: str) -> str \| None |
 | InMemoryStore.resolutions_for_repo | method | def resolutions_for_repo(self, repo_id: str, record_id: str \| None = None) -> list[ResolutionRecord] |
+| InMemoryStore.set_provider_secret | method | def set_provider_secret(self, repo_id: str, sealed: bytes) -> None |
 | InMemoryStore.sync_runs_for | method | def sync_runs_for(self, repo_id: str, sync_kind: str \| None = None) -> list[SyncRun] |
 | RecordRow | class | class RecordRow(Base) |
 | RegisteredRepo | class | class RegisteredRepo(BaseModel) |
@@ -234,9 +248,11 @@ cdm:
 | SqlStore.mark_config_edits | method | def mark_config_edits(self, repo_id: str, edit_ids: list[str], status: str, *, at: str) -> None |
 | SqlStore.records_for | method | def records_for(self, repo_id: str, *, verdict: str \| None = None, drift_kind: str \| None = None, audience: str \| None = None, doc_id: str \| None = None, limit: int \| None = None, offset: int = 0) -> list[ReviewRecord] |
 | SqlStore.replace_config | method | def replace_config(self, repo_id: str, sync_kind: str, documents: list[ConfigDocument], code_refs: list[ConfigCodeRef]) -> None |
+| SqlStore.repo_provider_secret | method | def repo_provider_secret(self, repo_id: str) -> bytes \| None |
 | SqlStore.repo_token_hash | method | def repo_token_hash(self, repo_id: str) -> str \| None |
 | SqlStore.resolutions_for | method | def resolutions_for(self, record_id: str) -> list[ResolutionRecord] |
 | SqlStore.resolutions_for_repo | method | def resolutions_for_repo(self, repo_id: str, record_id: str \| None = None) -> list[ResolutionRecord] |
+| SqlStore.set_provider_secret | method | def set_provider_secret(self, repo_id: str, sealed: bytes) -> None |
 | SqlStore.sync_runs_for | method | def sync_runs_for(self, repo_id: str, sync_kind: str \| None = None) -> list[SyncRun] |
 | Store | class | class Store(Protocol) |
 | Store.add_config_edit | method | def add_config_edit(self, repo_id: str, edit: ConfigEdit, *, edit_id: str, created_at: str) -> None |
@@ -255,8 +271,10 @@ cdm:
 | Store.mark_config_edits | method | def mark_config_edits(self, repo_id: str, edit_ids: list[str], status: str, *, at: str) -> None |
 | Store.records_for | method | def records_for(self, repo_id: str, *, verdict: str \| None = None, drift_kind: str \| None = None, audience: str \| None = None, doc_id: str \| None = None, limit: int \| None = None, offset: int = 0) -> list[ReviewRecord] |
 | Store.replace_config | method | def replace_config(self, repo_id: str, sync_kind: str, documents: list[ConfigDocument], code_refs: list[ConfigCodeRef]) -> None |
+| Store.repo_provider_secret | method | def repo_provider_secret(self, repo_id: str) -> bytes \| None |
 | Store.repo_token_hash | method | def repo_token_hash(self, repo_id: str) -> str \| None |
 | Store.resolutions_for_repo | method | def resolutions_for_repo(self, repo_id: str, record_id: str \| None = None) -> list[ResolutionRecord] |
+| Store.set_provider_secret | method | def set_provider_secret(self, repo_id: str, sealed: bytes) -> None |
 | Store.sync_runs_for | method | def sync_runs_for(self, repo_id: str, sync_kind: str \| None = None) -> list[SyncRun] |
 | StoredConfigEdit | class | class StoredConfigEdit(BaseModel) |
 | SyncRequest | class | class SyncRequest(BaseModel) |
@@ -275,24 +293,28 @@ cdm:
 | __all__ | variable | __all__ = ... |
 | __all__ | variable | __all__ = ... |
 | __all__ | variable | __all__ = ... |
+| _allowed_git_hosts | function | def _allowed_git_hosts() -> set[str] |
+| _check_remote_allowed | function | def _check_remote_allowed(remote_url: str) -> None |
 | _compute_health | function | def _compute_health(store: Store, repo_id: str) -> RepoHealth |
 | _compute_status | function | def _compute_status(store: Store, repo_id: str) -> RepoStatus |
 | _compute_telemetry | function | def _compute_telemetry(store: Store, repo_id: str) -> RepoTelemetry |
 | _default_now | function | def _default_now() -> str |
 | _default_static_dir | function | def _default_static_dir(root: Path \| None = None) -> Path \| None |
 | _disk_editable_parts | function | def _disk_editable_parts(local_path: str \| None) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], DocStyleOptions] |
+| _iso_to_epoch | function | def _iso_to_epoch(iso: str) -> int |
 | _json_type | function | def _json_type() -> TypeEngine[dict] |
 | _load_wiki_sections | function | def _load_wiki_sections(wiki_dir: Path \| None) -> list[dict[str, str]] |
 | _new_edit_id | function | def _new_edit_id(repo_id: str, edit: ConfigEdit, now: str) -> str |
 | _parse_iso | function | def _parse_iso(value: str) -> datetime |
 | _registered_repo | function | def _registered_repo(row: RepoRow) -> RegisteredRepo |
+| _resolve_provider_token | function | def _resolve_provider_token(store: Store, repo: RegisteredRepo, *, now: str, token_exchange_http: Any) -> str \| None |
 | _run_migrations | function | def _run_migrations(url: str) -> None |
 | _scan_doc_styles | function | def _scan_doc_styles(templates_root: Path) -> DocStyleOptions |
 | _wiki_dir | function | def _wiki_dir() -> Path \| None |
 | build_standalone_app | function | def build_standalone_app(repo_root: Path, *, repo_id: str \| None = None, now: str) -> object |
 | build_standalone_store | function | def build_standalone_store(repo_root: Path, *, repo_id: str \| None = None, now: str) -> InMemoryStore |
 | create_all | function | def create_all(engine: Engine) -> None |
-| create_app | function | def create_app(store: Store \| None = None, *, static_dir: Path \| None = None, wiki_dir: Path \| None = None, clock: Callable[[], str] = _default_now) -> FastAPI |
+| create_app | function | def create_app(store: Store \| None = None, *, static_dir: Path \| None = None, wiki_dir: Path \| None = None, clock: Callable[[], str] = _default_now, cloner: Any = None, pr_transport_factory: Callable[[str, str, str \| None], Any] \| None = None, token_exchange_http: Any = None) -> FastAPI |
 | effective_identity | function | def effective_identity(payload: RegistrationPayload) -> RepoIdentity |
 | engine_from_url | function | def engine_from_url(url: str) -> Engine |
 | hash_token | function | def hash_token(token: str) -> str |

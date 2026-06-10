@@ -19,6 +19,7 @@ __all__ = [
     "TransportError",
     "SyncError",
     "CatalogError",
+    "SecretError",
 ]
 
 
@@ -68,4 +69,14 @@ class CatalogError(CodeDocMonitorError):
 
     Raised for a missing/empty catalog dir, malformed yaml, a bad feature id,
     a duplicate id across files, or a feature naming a non-existent module.
+    """
+
+
+class SecretError(CodeDocMonitorError):
+    """A provider secret could not be sealed/opened (GIT-01, K8).
+
+    Raised for a missing/empty/non-base64/wrong-length ``$CDMON_SECRET_KEY`` (the
+    KEK that seals per-repo provider credentials at rest) or a sealed value that
+    fails authentication (tampered ciphertext or the wrong key). The plaintext
+    credential is NEVER included in the message.
     """

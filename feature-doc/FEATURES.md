@@ -2,7 +2,7 @@
 
 Generated from `feature-doc/catalog/*.yaml` — **do not hand-edit**. Run `cdmon wiki` (R-08) to regenerate. Each row's Demos/Tests columns trace the feature to its demo case(s) and test(s).
 
-**192 features** across 18 subsystems.
+**196 features** across 19 subsystems.
 
 ## agent
 
@@ -498,6 +498,31 @@ anchor_id(name) is a lineno-free sha256[:16] of a symbol's qualified name, stabl
 ### `FEAT-EXTRACT-006` — Shell extractor (sh/bash)
 
 ShellExtractor statically parses sh/bash function definitions (`name() {…}` and `function name {…}`) via the stdlib re module only, registered by default for .sh/.bash — proving a new language is a registration, never an engine edit. Never sources or executes the script.
+
+## gitsync
+
+| ID | Feature | Modules | Constraints | Demos | Tests | Status |
+|----|---------|---------|-------------|-------|-------|--------|
+| `FEAT-GITSYNC-001` | Clone-on-demand for a not-local repo | gitfetch | K0, K1, K4, K8 | — | — | implemented |
+| `FEAT-GITSYNC-002` | At-rest sealing of per-repo provider credentials | secrets | K0, K6, K8 | — | — | implemented |
+| `FEAT-GITSYNC-003` | Short-lived GitHub App / GitLab OAuth token minting | gitauth | K0, K4, K8, K10 | — | — | implemented |
+| `FEAT-GITSYNC-004` | GitHub docs-PR transport (atomic git-data flow) | pr | K0, K4, K8, K10 | — | — | implemented |
+
+### `FEAT-GITSYNC-001` — Clone-on-demand for a not-local repo
+
+gitfetch.cloned_repo(spec, secret) materializes a remote repo into a throwaway temp tree (a shallow single-branch git clone via one injected _Cloner leaf) and yields it for run_sync(mode="local"), then tears the temp tree down on success OR error — so the server syncs a repo it does not hold locally without ever touching configsync. RemoteSpec carries the remote_url/provider/default_branch; the token reaches git only via an ephemeral GIT_ASKPASS env helper, never argv or the URL (_build_clone_argv is asserted secret-free); a clone failure is a loud SyncError with the secret scrubbed.
+
+### `FEAT-GITSYNC-002` — At-rest sealing of per-repo provider credentials
+
+secrets.SecretBox seals a per-repo git provider credential with AES-256-GCM (random-nonce; seal/open_secret round-trip) under a base64 32-byte KEK read from $CDMON_SECRET_KEY (secret_box_from_env). A git credential must be REPLAYED, so — unlike the E-06 bearer token's one-way sha256 — it is encrypted (reversible), the conscious at-rest fork. The store persists OPAQUE sealed bytes (set_provider_secret/repo_provider_secret) and never imports cryptography; sealing/opening happen at the route. A missing/short/non-base64 KEK or a tampered ciphertext is a loud SecretError.
+
+### `FEAT-GITSYNC-003` — Short-lived GitHub App / GitLab OAuth token minting
+
+gitauth mints a SHORT-LIVED provider token from a longer-lived credential so the hot token is never stored: github_app_jwt signs a 9-minute RS256 JWT (cryptography) which mint_github_installation_token exchanges at POST /app/installations/{id}/access_tokens; mint_gitlab_oauth_token exchanges a refresh token at the OAuth token endpoint; mint_provider_token dispatches by provider_kind over the opened credential JSON. The HTTP exchange is one injected leaf (K4); a bad PEM/non-RSA key/failed exchange/unknown kind is a loud TransportError.
+
+### `FEAT-GITSYNC-004` — GitHub docs-PR transport (atomic git-data flow)
+
+pr.GitHubTransport is the PRTransport sibling of GitLabTransport: submit opens a docs PR through the canonical ATOMIC GitHub git-data flow with no local checkout — read the target ref + base tree, POST a new tree carrying every healed file inline, POST a commit, create the source branch ref, then open the pull request — each through one injected _GitHubHttp leaf (stdlib urllib, K0/K4). from_repo(remote_url, token) builds either transport from a repo URL (the shared _parse_remote is the SSRF/host chokepoint).
 
 ## heal
 

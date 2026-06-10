@@ -354,6 +354,29 @@ def test_sql_reregister_can_rotate_token(store: SqlStore) -> None:
     assert store.repo_token_hash("acme/widget") == hashlib.sha256(b"second").hexdigest()
 
 
+def test_sql_provider_secret_plaintext_never_in_stored_payload(store: SqlStore) -> None:
+    """The WRITE-ONLY plaintext provider_secret must never reach the JSON column (GIT-02)."""
+    from sqlalchemy import select
+
+    from code_doc_monitor.server.db import RepoRow
+
+    payload = RegistrationPayload(
+        repo=_identity(), default_branch="main", provider_secret="PLAINTEXT-XYZ"
+    )
+    store.add_repo(payload)
+    with store._session() as session:
+        row = session.scalars(
+            select(RepoRow).where(RepoRow.repo_id == "acme/widget")
+        ).first()
+        assert row is not None
+        assert "provider_secret" not in row.payload  # sanitized from the JSON
+        assert "PLAINTEXT-XYZ" not in str(row.payload)  # belt-and-braces
+    # …and the read projection never exposes it either.
+    got = store.get_repo("acme/widget")
+    assert got is not None
+    assert "provider_secret" not in got.model_dump()
+
+
 # --------------------------------------------------------------------------- #
 # real persistence across store instances sharing one file engine (not a dict)
 # --------------------------------------------------------------------------- #
@@ -486,6 +509,33 @@ def test_alembic_migration_0004_config_edits_up_then_down(tmp_path: Path) -> Non
     after = set(inspect(engine).get_table_names())
     assert "config_edits" not in after
     assert {"config_documents", "config_code_refs", "sync_runs"} <= after
+
+
+def test_alembic_migration_0005_provider_secret_up_then_down(tmp_path: Path) -> None:
+    """0005 (GIT-02) adds repos.provider_secret; down drops it, leaving repos intact."""
+    from alembic import command
+
+    db = tmp_path / "migrate_0005.db"
+    url = f"sqlite:///{db}"
+    cfg = _alembic_config(url)
+    engine = engine_from_url(url)
+
+    # upgrade to 0004 -> repos has token_hash but NOT yet provider_secret.
+    command.upgrade(cfg, "0004_config_edits")
+    cols = {c["name"] for c in inspect(engine).get_columns("repos")}
+    assert "token_hash" in cols
+    assert "provider_secret" not in cols
+
+    # upgrade head (through 0005) -> the provider_secret column exists.
+    command.upgrade(cfg, "head")
+    cols = {c["name"] for c in inspect(engine).get_columns("repos")}
+    assert "provider_secret" in cols
+
+    # downgrade to 0004 -> the column is dropped; the repos table remains.
+    command.downgrade(cfg, "0004_config_edits")
+    cols = {c["name"] for c in inspect(engine).get_columns("repos")}
+    assert "provider_secret" not in cols
+    assert "repos" in set(inspect(engine).get_table_names())
 
 
 # --------------------------------------------------------------------------- #

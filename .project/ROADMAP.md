@@ -541,6 +541,89 @@ ONLY when explicitly requested.
 
 ---
 
+## EPIC GIT — server-side git sync & provider credentials  (the server can sync + open docs-PRs against a repo it does NOT hold locally)
+
+Today the central server can only sync a repo already on its disk
+(`configsync.run_sync(local_path, …)`) — there is **no clone/fetch anywhere** —
+and the only PR write path is `GitLabTransport`. This epic teaches the server to
+fetch a remote repo on demand and write back to GitHub/GitLab with a per-repo
+credential. Three layers, each additive (K6), each reusing the prior's seams.
+See ARCHITECTURE.md `EPIC GIT` for the pinned contracts. (User framing: "SSO" —
+literal browser-OAuth is the WRONG spine for an unattended fleet-sync workload; it
+is a later optional layer. The machine-to-machine credential below is what makes
+"sync to git" actually work.)
+
+**STEP 0 — clone-on-demand**
+- ✅ **GIT-00** `gitfetch.py`: `RemoteSpec` + `cloned_repo(spec, secret, *, cloner)`
+  context manager — shallow-clone a remote into a throwaway temp tree, yield it,
+  teardown + token-shred in `finally` (K1); the git subprocess is one injected
+  leaf (K4), the token never enters argv/URL (GIT_ASKPASS env). *Goal:* over a
+  REAL `file://` bare repo (no network), `with cloned_repo(...) as t: run_sync(t,
+  mode="local")` surfaces the cloned tree's docs/coverage; a fake `cloner`
+  unit-proves teardown + `_build_clone_argv` excludes the secret. `configsync.py`
+  untouched (K9).
+
+**PHASE 1 — per-repo scoped token**
+- ✅ **GIT-01** `secrets.py`: `SecretBox` (AES-256-GCM) `seal`/`open_secret` +
+  `secret_box_from_env()` ($CDMON_SECRET_KEY 32-byte base64) + new `SecretError`.
+  `cryptography` in the `[server]` extra ONLY (engine stays K0). *Goal:* seal→open
+  round-trips; tampered ciphertext / missing / short KEK → loud `SecretError`.
+- ✅ **GIT-02** identity + payload + store: `RepoIdentity.provider`/`remote_url`
+  + `RegistrationPayload.provider_secret` (write-only) appended LAST (K6); Store
+  `set_provider_secret`/`repo_provider_secret` on BOTH stores (opaque sealed
+  bytes, parallel to `repo_token_hash`); `db.RepoRow.provider_secret`
+  (`LargeBinary` nullable) + sanitize `exclude={"auth_token","provider_secret"}`
+  + Alembic `0005`. *Goal:* register w/ `provider_secret` → sealed bytes stored,
+  plaintext absent from the payload JSON (InMemoryStore AND SqlStore parity),
+  `repo_provider_secret` round-trips, migration up/down on temp SQLite.
+- ✅ **GIT-03** `pr.py` `GitHubTransport(PRTransport)`: the atomic GitHub git-data
+  flow (ref→tree→commit→ref→pull) behind a new `_GitHubHttp` leaf;
+  `from_repo(remote_url, token)` on BOTH `GitHubTransport` and `GitLabTransport`.
+  *Goal:* a fake leaf asserts the exact GitHub call sequence + payloads; `from_repo`
+  parses provider URLs (loud on a non-provider URL).
+- ✅ **GIT-04** server wiring: `POST /repos/{id}/sync` clones when `local_path` is
+  absent but `provider`+`remote_url`+sealed secret are present; NEW
+  `POST /repos/{id}/docs-pr` (token-gated by E-06 `_verify_token`) clones → heals
+  (`syncpr.sync_pr`) → `plan_docs_pr` → `…Transport.from_repo` → `open_docs_pr`.
+  *Goal (TestClient):* register a remote repo (REAL `file://` bare or fake clone)
+  → `POST /sync` surfaces docs+coverage; `POST /docs-pr` w/ a fake transport opens
+  the MR; the 401/403 auth matrix holds; SSRF allowlist on `remote_url` host.
+
+**PHASE 2 — GitHub App / GitLab OAuth (short-lived tokens; the "install once, no PATs" experience)**
+- ✅ **GIT-05** `gitauth.py`: mint short-lived GitHub App installation tokens
+  (RS256 JWT via `cryptography`) + GitLab OAuth tokens behind a new injected
+  `_TokenExchangeHttp` leaf; `from_credential()` on both transports; routes resolve
+  a MINTED token when the repo carries `provider`+`installation_id` (no stored
+  provider_secret → recovers most of the Phase-1 at-rest invariant). *Goal:* a fake
+  exchange leaf mints a token the transport then uses; RS256 JWT signing unit with
+  a test key; routes prefer a minted token over a stored secret. Reuses
+  `RemoteSpec`/clone seam/transports verbatim — only the credential SOURCE changes.
+
+*Real-fixture e2e (the user's explicit ask):* the `demo/` tree becomes a REAL
+git repo and is used as the live clone→sync→docs-PR fixture across GIT-00/04 (no
+network — `file://`).
+
+> **EPIC GIT COMPLETE** (GIT-00…GIT-05). The central server can sync AND open
+> docs-PRs against a GitHub/GitLab repo it does NOT hold locally: **STEP 0**
+> clone-on-demand (`gitfetch`, zero `configsync` change); **PHASE 1** a per-repo PAT
+> sealed at rest (`secrets` AES-256-GCM) driving clone + a `GitHubTransport` sibling
+> + `POST /repos/{id}/docs-pr` + remote `POST /sync`; **PHASE 2** minted short-lived
+> GitHub-App/GitLab-OAuth tokens (`gitauth`, RS256) so the hot token is never stored.
+> The token never enters argv/URL (GIT_ASKPASS); `remote_url` is SSRF-allowlisted;
+> the engine core stays K0 (`cryptography` lazy, `[server]`-extra only). Verified
+> end-to-end over the REAL `demo/` tree as a `file://` origin (no network). Dogfood
+> green: `cdmon check`/`lint`/`coverage --fail-under 95`/`trace --fail-on-gap`/`wiki
+> --check` all exit 0; **196/196** features have a test AND a demo (4 new
+> `FEAT-GITSYNC-*`). Follow-on (not blocking): browser-OAuth web-login SSO (only if
+> the console goes interactive multi-tenant); SSH deploy keys (air-gapped adopters).
+
+*Out of scope (do NOT build):* browser-OAuth web-login SSO (a later optional layer,
+only if the console becomes interactive multi-tenant); SSH deploy-key infra (only
+for a concrete air-gapped adopter); KMS/HSM envelope encryption (single
+`$CDMON_SECRET_KEY` KEK suffices for single-org); multi-tenant `RepoIdentity` fields.
+
+---
+
 ## Dependency order (high level)
 
 ```

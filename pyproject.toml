@@ -34,6 +34,12 @@ server = [
     "sqlalchemy>=2.0",
     "alembic",
     "psycopg[binary]",
+    # GIT-01: seal per-repo provider credentials at rest (AES-256-GCM). A git
+    # credential must be REPLAYED (not hashed), so it is encrypted, not one-way —
+    # the conscious fork from the E-06 token-hash model. The engine core NEVER
+    # imports `cryptography` (secrets.py lazy-imports it, and only app.py/tests
+    # import secrets.py), so the core dependency surface is unchanged (K0).
+    "cryptography>=42",
 ]
 dev = [
     "pytest",
@@ -48,6 +54,7 @@ dev = [
     "sqlalchemy>=2.0",
     "alembic",
     "psycopg[binary]",
+    "cryptography>=42",
 ]
 
 [project.scripts]

@@ -8,7 +8,7 @@ calls the transport under `dry_run`. The default `GitLabTransport` is exercised
 only through a stubbed HTTP leaf — no real network is ever touched (K4); HTTP is
 stdlib-only (K0); the branch name is deterministic (K10).
 
-Features: FEAT-PR-004, FEAT-PR-005, FEAT-PR-006
+Features: FEAT-PR-004, FEAT-PR-005, FEAT-PR-006, FEAT-GITSYNC-004
 """
 
 from __future__ import annotations
@@ -20,8 +20,10 @@ import pytest
 
 from code_doc_monitor.errors import TransportError
 from code_doc_monitor.pr import (
+    GitHubTransport,
     GitLabTransport,
     MergeRequestPlan,
+    _parse_remote,
     open_docs_pr,
     plan_docs_pr,
 )
@@ -317,3 +319,273 @@ def test_gitlab_builds_default_http_leaf_without_network(
     out = transport.submit(plan)
     assert out == {"web_url": "https://gl/mr/3"}
     assert len(posted) == 3
+
+
+# --- _parse_remote + from_repo (GIT-03) -------------------------------------
+
+
+def test_parse_remote_strips_dot_git_and_returns_host_path() -> None:
+    assert _parse_remote("https://github.com/owner/repo.git") == (
+        "github.com",
+        "owner/repo",
+    )
+    assert _parse_remote("https://gitlab.com/g/sub/proj") == (
+        "gitlab.com",
+        "g/sub/proj",
+    )
+
+
+def test_parse_remote_loud_on_non_provider_url() -> None:
+    with pytest.raises(TransportError, match="not a recognizable git remote URL"):
+        _parse_remote("not-a-url")
+    with pytest.raises(TransportError):
+        _parse_remote("https://github.com/owner")  # no repo segment → no '/'
+
+
+def test_gitlab_from_repo_uses_full_project_path(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    plan = plan_docs_pr(_sync(), root)
+    assert plan is not None
+    urls: list[str] = []
+
+    class FakeHttp:
+        def request(
+            self, method: str, url: str, *, body: dict | None, token: str
+        ) -> dict:
+            urls.append(url)
+            return {"web_url": "https://gl/mr/1"}
+
+    transport = GitLabTransport.from_repo(
+        "https://gitlab.com/group/sub/proj.git", "t", http=FakeHttp()
+    )
+    transport.submit(plan)
+    # the URL-encoded full project path is in the project URL (gitlab.com default api).
+    assert urls[0].startswith("https://gitlab.com/api/v4/projects/group%2Fsub%2Fproj/")
+
+
+# --- GitHubTransport (GIT-03; HTTP leaf stubbed — zero network, K4) ----------
+
+
+def test_github_submit_runs_atomic_git_data_flow_via_injected_http(
+    tmp_path: Path,
+) -> None:
+    """ref → base commit → tree → commit → branch ref → PR, all via ONE leaf."""
+    root = _repo(tmp_path)
+    plan = plan_docs_pr(_sync(), root, ref="deadbeef")
+    assert plan is not None
+
+    requests: list[dict[str, object]] = []
+
+    class FakeHttp:
+        def request(
+            self, method: str, url: str, *, body: dict | None, token: str
+        ) -> dict:
+            requests.append(
+                {"method": method, "url": url, "body": body, "token": token}
+            )
+            if url.endswith(f"/git/ref/heads/{plan.target_branch}"):
+                return {"object": {"sha": "BASE_SHA"}}
+            if url.endswith("/git/commits/BASE_SHA"):
+                return {"tree": {"sha": "BASE_TREE"}}
+            if url.endswith("/git/trees"):
+                return {"sha": "NEW_TREE"}
+            if url.endswith("/git/commits"):
+                return {"sha": "NEW_COMMIT"}
+            if url.endswith("/git/refs"):
+                return {}
+            if url.endswith("/pulls"):
+                return {"html_url": "https://gh/pr/7", "number": 7}
+            raise AssertionError(f"unexpected url {url}")  # pragma: no cover
+
+    transport = GitHubTransport(
+        owner="acme", repo="widget", token="ghp_x", http=FakeHttp()
+    )
+    out = transport.submit(plan)
+
+    assert out == {"html_url": "https://gh/pr/7", "number": 7}
+    assert [r["method"] for r in requests] == [
+        "GET",
+        "GET",
+        "POST",
+        "POST",
+        "POST",
+        "POST",
+    ]
+    assert all(r["token"] == "ghp_x" for r in requests)
+    urls = [r["url"] for r in requests]
+    base = "https://api.github.com/repos/acme/widget"
+    assert urls[0] == f"{base}/git/ref/heads/main"
+    assert urls[1] == f"{base}/git/commits/BASE_SHA"
+    assert urls[2] == f"{base}/git/trees"
+    assert urls[3] == f"{base}/git/commits"
+    assert urls[4] == f"{base}/git/refs"
+    assert urls[5] == f"{base}/pulls"
+    # the new tree carries one inline blob per healed file, parented on the base tree.
+    tree_body = requests[2]["body"]
+    assert isinstance(tree_body, dict)
+    assert tree_body["base_tree"] == "BASE_TREE"
+    assert {e["path"] for e in tree_body["tree"]} == {
+        "docs/api/one.md",
+        "docs/api/two.md",
+    }
+    assert all(e["mode"] == "100644" and e["type"] == "blob" for e in tree_body["tree"])
+    assert all("content" in e for e in tree_body["tree"])
+    # the commit is parented on the base sha and points at the new tree.
+    commit_body = requests[3]["body"]
+    assert isinstance(commit_body, dict)
+    assert commit_body["tree"] == "NEW_TREE"
+    assert commit_body["parents"] == ["BASE_SHA"]
+    # the branch ref → the new commit.
+    ref_body = requests[4]["body"]
+    assert isinstance(ref_body, dict)
+    assert ref_body["ref"] == f"refs/heads/{plan.source_branch}"
+    assert ref_body["sha"] == "NEW_COMMIT"
+    # the PR points the source branch at the target.
+    pr_body = requests[5]["body"]
+    assert isinstance(pr_body, dict)
+    assert pr_body["head"] == plan.source_branch
+    assert pr_body["base"] == "main"
+    assert pr_body["title"] == plan.title
+
+
+def test_github_from_env_builds_with_required_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GITHUB_REPOSITORY", "acme/widget")
+    monkeypatch.setenv("CDMON_GITHUB_TOKEN", "ghp_x")
+    monkeypatch.delenv("GITHUB_API_URL", raising=False)
+    transport = GitHubTransport.from_env()
+    assert isinstance(transport, GitHubTransport)
+
+
+def test_github_from_env_missing_repo_is_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    monkeypatch.setenv("CDMON_GITHUB_TOKEN", "ghp_x")
+    with pytest.raises(TransportError, match="GITHUB_REPOSITORY"):
+        GitHubTransport.from_env()
+
+
+def test_github_from_env_missing_token_is_loud(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_REPOSITORY", "acme/widget")
+    monkeypatch.delenv("CDMON_GITHUB_TOKEN", raising=False)
+    with pytest.raises(TransportError, match="CDMON_GITHUB_TOKEN"):
+        GitHubTransport.from_env()
+
+
+def test_github_from_repo_parses_github_com(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    plan = plan_docs_pr(_sync(), root)
+    assert plan is not None
+    urls: list[str] = []
+
+    class FakeHttp:
+        def request(
+            self, method: str, url: str, *, body: dict | None, token: str
+        ) -> dict:
+            urls.append(url)
+            return {"object": {"sha": "S"}, "tree": {"sha": "T"}, "sha": "C"}
+
+    transport = GitHubTransport.from_repo(
+        "https://github.com/acme/widget.git", "ghp_x", http=FakeHttp()
+    )
+    transport.submit(plan)
+    assert urls[0] == "https://api.github.com/repos/acme/widget/git/ref/heads/main"
+
+
+def test_github_from_repo_enterprise_host_derives_api_v3(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    plan = plan_docs_pr(_sync(), root)
+    assert plan is not None
+    urls: list[str] = []
+
+    class FakeHttp:
+        def request(
+            self, method: str, url: str, *, body: dict | None, token: str
+        ) -> dict:
+            urls.append(url)
+            return {"object": {"sha": "S"}, "tree": {"sha": "T"}, "sha": "C"}
+
+    transport = GitHubTransport.from_repo(
+        "https://ghe.corp/org/proj", "ghp_x", http=FakeHttp()
+    )
+    transport.submit(plan)
+    assert urls[0].startswith("https://ghe.corp/api/v3/repos/org/proj/")
+
+
+def test_github_from_repo_non_github_path_is_loud() -> None:
+    with pytest.raises(TransportError, match="owner.*repo"):
+        GitHubTransport.from_repo("https://github.com/group/sub/proj", "t")
+
+
+def test_from_repo_api_url_derivation_and_override() -> None:
+    # GitLab: a self-hosted host derives /api/v4; an explicit api_url overrides it.
+    gl = GitLabTransport.from_repo("https://gitlab.corp/g/p", "t")
+    assert gl._api_url == "https://gitlab.corp/api/v4"
+    assert gl._project_id == "g/p"
+    gl2 = GitLabTransport.from_repo(
+        "https://gitlab.com/g/p", "t", api_url="https://x/api/v4"
+    )
+    assert gl2._api_url == "https://x/api/v4"
+    # GitHub: an explicit api_url overrides the github.com / GHE default.
+    gh = GitHubTransport.from_repo(
+        "https://github.com/a/b", "t", api_url="https://gh.internal/api/v3"
+    )
+    assert gh._api_url == "https://gh.internal/api/v3"
+    assert (gh._owner, gh._repo) == ("a", "b")
+
+
+def test_github_through_open_docs_pr(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    seen: list[str] = []
+
+    class FakeHttp:
+        def request(
+            self, method: str, url: str, *, body: dict | None, token: str
+        ) -> dict:
+            seen.append(url)
+            return {
+                "object": {"sha": "S"},
+                "tree": {"sha": "T"},
+                "sha": "C",
+                "html_url": "https://gh/pr/9",
+            }
+
+    transport = GitHubTransport(owner="a", repo="b", token="t", http=FakeHttp())
+    out = open_docs_pr(_sync(), root, transport=transport)
+    assert out == {
+        "object": {"sha": "S"},
+        "tree": {"sha": "T"},
+        "sha": "C",
+        "html_url": "https://gh/pr/9",
+    }
+    assert len(seen) == 6  # the 6-call atomic flow
+
+
+def test_github_builds_default_http_leaf_without_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No http injected → submit builds the stdlib leaf lazily; stub the one real
+    urlopen so the build-default branch runs with NO network (K4)."""
+    import code_doc_monitor.pr as pr_mod
+
+    posted: list[tuple[str, str]] = []
+
+    def fake_request(
+        self: object, method: str, url: str, *, body: dict | None, token: str
+    ) -> dict:
+        posted.append((method, url))
+        return {
+            "object": {"sha": "S"},
+            "tree": {"sha": "T"},
+            "sha": "C",
+            "html_url": "https://gh/pr/3",
+        }
+
+    monkeypatch.setattr(pr_mod._UrllibGitHubHttp, "request", fake_request)
+    root = _repo(tmp_path)
+    plan = plan_docs_pr(_sync(), root)
+    assert plan is not None
+    transport = GitHubTransport(owner="a", repo="b", token="t")  # no http injected
+    out = transport.submit(plan)
+    assert out["html_url"] == "https://gh/pr/3"
+    assert len(posted) == 6

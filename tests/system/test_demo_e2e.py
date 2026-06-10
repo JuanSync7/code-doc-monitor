@@ -128,9 +128,13 @@ def test_central_token_less_local_sync_succeeds_with_counts() -> None:
     assert resp.status_code == 201, resp.text
     run = resp.json()
     assert run["sync_kind"] == "local"
-    # The undocumented scheduler.py is a COVERAGE gap, NOT drift, so the demo
-    # stays fully synced.
-    assert run["fully_synced"] is True
+    # The undocumented scheduler.py is a COVERAGE gap, NOT drift, so the demo has
+    # NO drift. (Assert drift-clean rather than ``fully_synced``: for a LOCAL sync
+    # ``fully_synced`` also requires ``commits_ahead == 0``, which only holds when
+    # the OUTER repo is on its default branch — so it is branch-fragile in CI/dev,
+    # whereas "the demo has no drift" is the real invariant under test.)
+    assert run["drift"]["ok"] is True
+    assert run["drift"]["drift_count"] == 0
     assert run["document_count"] == 3
     assert run["code_ref_count"] == 6
 
@@ -299,6 +303,71 @@ def test_git_mode_uncommitted_subdir_is_loud(tmp_path: Path) -> None:
     with pytest.raises(SyncError, match="config/cdmon"):
         run_sync(sub, "demo-taskflow", mode="git", default_branch="main", now=_NOW)
     _no_worktrees(top)
+
+
+# --------------------------------------------------------------------------- #
+# coverage-on-sync — a sync carries + persists a coverage snapshot of the synced
+# tree, so adding a file + syncing surfaces it on the Coverage page (no separate
+# POST /coverage ingest needed).
+# --------------------------------------------------------------------------- #
+
+
+def test_local_sync_carries_a_coverage_snapshot(tmp_path: Path) -> None:
+    """run_sync's result carries the coverage snapshot of the synced tree (the same
+    wire shape the Coverage page reads), stamped with the injected clock (K10), so
+    a sync can refresh coverage without a separate POST /coverage ingest."""
+    _top, sub = _commit_demo_in_subdir(tmp_path)
+    result = run_sync(
+        sub, "demo-taskflow", mode="local", default_branch="main", now=_NOW
+    )
+    snap = result.coverage
+    assert snap is not None
+    assert snap["captured_at"] == _NOW
+    files = {f["path"]: f["status"] for f in snap["files"]}
+    # The demo's deliberate gap is visible in the synced snapshot.
+    assert files["src/taskflow/core/scheduler.py"] == "undocumented"
+    assert files["src/taskflow/core/engine.py"] == "documented"
+
+
+def test_sync_route_refreshes_coverage_when_a_file_is_added(tmp_path: Path) -> None:
+    """POST /sync persists a coverage snapshot of the just-synced tree: dropping a
+    new undocumented source file and re-syncing surfaces it on GET /coverage (the
+    dashboard Coverage page), with the file percentage dropping."""
+    from code_doc_monitor.registry import RegistrationPayload
+    from code_doc_monitor.server import InMemoryStore, create_app
+    from code_doc_monitor.sinks import RepoIdentity
+
+    _top, sub = _commit_demo_in_subdir(tmp_path)
+    store = InMemoryStore()
+    store.add_repo(
+        RegistrationPayload(
+            repo=RepoIdentity(
+                repo_id="demo-taskflow",
+                repo_name="Taskflow (demo)",
+                local_path=str(sub),
+                default_branch="main",
+            )
+        )
+    )
+    with TestClient(create_app(store)) as client:
+        first = client.post("/repos/demo-taskflow/sync", json={"mode": "local"})
+        assert first.status_code == 201, first.text
+        before = client.get("/repos/demo-taskflow/coverage").json()
+        assert len(before) == 1, "the sync should have captured a coverage snapshot"
+        pct_before = before[-1]["percent_files"]
+
+        # Drop a brand-new undocumented source file into a covered dir.
+        (sub / "src" / "taskflow" / "core" / "extra.py").write_text(
+            'def extra():\n    """A newly added public function."""\n    return 1\n',
+            encoding="utf-8",
+        )
+        second = client.post("/repos/demo-taskflow/sync", json={"mode": "local"})
+        assert second.status_code == 201, second.text
+        after = client.get("/repos/demo-taskflow/coverage").json()
+        assert len(after) == 2, "the second sync should append a fresh snapshot"
+        files = {f["path"]: f["status"] for f in after[-1]["files"]}
+        assert files["src/taskflow/core/extra.py"] == "undocumented"  # NEW file shows
+        assert after[-1]["percent_files"] < pct_before  # the gap drags coverage down
 
 
 # --------------------------------------------------------------------------- #

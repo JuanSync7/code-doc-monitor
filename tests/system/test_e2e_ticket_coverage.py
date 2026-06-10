@@ -228,7 +228,9 @@ def test_seed_demo_builds_a_populated_store() -> None:
     store = seed.build_seeded_store()
 
     repos = store.list_repos()
-    assert len(repos) >= 3, "several demo repos are registered"
+    # The demo seeds the two REAL repos (the dogfood `code-doc-monitor` + the
+    # `demo-taskflow` adopter); the synthetic `acme-*` placeholders were removed.
+    assert len(repos) >= 2, "the real demo repos are registered"
 
     # At least one repo has a ticketed record.
     ticketed = [

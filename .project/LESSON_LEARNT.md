@@ -1905,3 +1905,140 @@ own implementing modules are inside the thing being gated.
   until `cdmon wiki` regenerated it — the dogfood gate covers tests, not just source.
   (Watch chained `;` in CI probes: a stale-wiki nonzero is masked if a passing command
   runs after it — use `&&` or check each exit code.)
+
+- [GIT-00] **Clone-on-demand is a context manager, NOT a `run_git=` wrapper.** The
+  grounding workflow proposed `clone_runner(...)` returning a `_GitRunner` that
+  lazily clones on its first call and re-roots subsequent calls. But
+  `configsync._open_repo` asserts `local_path.is_dir()` and runs `git rev-parse
+  HEAD` BEFORE any injected runner fires — so a lazy runner has to forge a sentinel
+  path and rewrite every call's cwd (stateful, subtle). `gitfetch.cloned_repo` instead
+  clones FULLY up front into a `mkdtemp` then yields it for `run_sync(clone,
+  mode="local")` with the DEFAULT runner — **zero `configsync.py` change** (K9). →
+  When you can wrap a pipeline at its INPUT (give it a ready tree) instead of
+  threading a new seam THROUGH it, prefer the wrap; less coupling, fewer constraints.
+- [GIT-00] **A `file://` clone exercises the real subprocess leaf with no network —
+  so no `# pragma: no cover`.** `git clone --depth=1 --single-branch file://<repo>`
+  forces git's transport path (not the local-hardlink optimization), so the real
+  `_GitCloner.clone` runs end-to-end offline (EDR-safe). Passing a *dummy* secret to a
+  `file://` clone even covers the `GIT_ASKPASS` branch (git ignores auth for `file://`
+  but the askpass-setup Python still runs). → For a "network" leaf, ask whether
+  `file://`/loopback can drive the SAME code path before reaching for a pragma.
+- [GIT-00] **Token never in argv/URL — only the username.** The clone URL carries at
+  most `https://x-access-token@host/...` (github) / `https://oauth2@host/...` (gitlab);
+  the token is handed to git ONLY via an ephemeral `GIT_ASKPASS` helper reading
+  `$CDMON_GIT_TOKEN` from the child env. `_build_clone_argv` is pure + unit-asserted to
+  never contain the secret. → argv is world-visible via `ps`; env is per-process —
+  always route a git credential through askpass/extraHeader, never the command line.
+
+- [GIT-01] **A replayed credential breaks the hash-only-at-rest invariant — encrypt,
+  don't hash.** The E-06 bearer token is stored as a one-way sha256 (the server only
+  ever COMPARES it). A git PAT must be REPLAYED to the provider, so it cannot be
+  hashed — `secrets.SecretBox` seals it with AES-256-GCM under `$CDMON_SECRET_KEY`.
+  This is a deliberate, documented weakening, unavoidable for ANY replayed credential
+  (OAuth refresh tokens, App tokens, SSH keys all break it too); PHASE 2's short-lived
+  minted tokens recover most of it. → Isolate the reversible secret behind its OWN
+  Store method; never fold it into the hash-only token path.
+- [GIT-01] **Keep the `[server]`-extra dep out of the core import graph with a LAZY
+  import + a subprocess test.** `cryptography` is imported INSIDE `seal`/`open_secret`,
+  not at `secrets.py` module load, and no engine module imports `secrets.py`. The K0
+  proof is a `subprocess.run([sys.executable, "-c", "import …configsync…; assert
+  'cryptograph' not in sys.modules"])` — a fresh interpreter is the only robust way to
+  assert an absence, since a sibling test in the same process may already have imported
+  the dep. → For any optional-extra boundary, prove it in a clean subprocess.
+- [GIT-01] **`base64.b64decode(s, validate=True)` raises `binascii.Error` (a
+  `ValueError` subclass).** Catch `(binascii.Error, ValueError)` and re-raise a typed
+  `SecretError`; and inject the env as a `Mapping` arg (default `os.environ`) so KEK
+  tests pass a plain dict and never mutate the real environment (K10 determinism).
+
+- [GIT-02] **Adding a pydantic FIELD to a documented model drifts NOTHING; adding a
+  METHOD does.** `RepoIdentity.provider`/`remote_url` + `RegistrationPayload.provider_secret`
+  caused ZERO dogfood drift — a class field is part of the class *body*, not the
+  `class X(Base)` signature line the fingerprint hashes, and the symbol table lists
+  the class, not its fields. The reheal fired ONLY for the new Store *methods*
+  (`set_provider_secret`/`repo_provider_secret`). → New model fields are the cheapest
+  additive change (no reheal, no migration when they live in a JSON column); new
+  public methods/functions DO need a reheal of the doc that tables them.
+- [GIT-02] **Two columns, two disciplines: hash the compared token, ENCRYPT the
+  replayed credential — and never let the store touch crypto.** `provider`/`remote_url`
+  ride in the existing `payload` JSON column (additive, K6 → no migration); only the
+  binary sealed `provider_secret` needs a real column (Alembic 0005, mirroring 0002).
+  Sealing happens at the ROUTE (the `[server]` crypto layer); the store persists
+  OPAQUE bytes via a SEPARATE `set_provider_secret`/`repo_provider_secret` pair, so
+  `store.py` stays pure pydantic/stdlib and the reversible secret never mixes with the
+  one-way `token_hash`. The SqlStore sanitize MUST grow to
+  `exclude={"auth_token","provider_secret"}` or the write-only plaintext leaks into
+  the JSON column (asserted directly on the row).
+- [GIT-02] **A `params=["memory","sql"]` fixture is the cleanest Store-parity proof.**
+  One parametrized `store` fixture (InMemoryStore + a fresh in-memory-SQLite SqlStore,
+  `importorskip("sqlalchemy")`) runs every contract test over BOTH backends, so a
+  divergence (e.g. set-on-unknown-repo storing in the dict but no-op'ing on the row)
+  is caught immediately — it forced InMemoryStore to guard `set` on `_repos` to match
+  SqlStore's update-existing-row semantics.
+
+- [GIT-03] **GitHub commits a multi-file change atomically with NO local checkout via
+  the git-data API — and the trees endpoint takes INLINE content.** The flow is `GET
+  ref/heads/{target}` → `GET commits/{sha}` (for the base tree) → `POST git/trees`
+  with `{base_tree, tree:[{path,mode:100644,type:blob,content}]}` → `POST git/commits`
+  (`parents=[base]`) → `POST git/refs` (`refs/heads/{source}`) → `POST pulls`. Because
+  `content` is inline, there is NO separate blob-creation step (6 calls, not 6+N). It
+  mirrors GitLabTransport's 3-call flow behind the SAME `PRTransport`/injected-leaf
+  shape, so `open_docs_pr` drives either by provider with no branching. → Mock the
+  one leaf and assert the exact request sequence; the real urlopen stays the pragma.
+- [GIT-03] **`from_repo(remote_url, token)` is the SERVER's transport constructor;
+  `from_env` is the CI/client one.** The central server opens the sealed credential
+  then builds a transport FROM the repo's `remote_url`; a shared `_parse_remote(url)`
+  (strip `.git`, split host/path, loud on garbage) is the ONE place an adopter URL is
+  validated — the SSRF/host-allowlist hook. api_url derivation: github.com→
+  `api.github.com`, GHE→`/<host>/api/v3`; gitlab.com→`/api/v4`, self-hosted→
+  `/<host>/api/v4`; an explicit `api_url` always wins. → Keep URL parsing in one
+  helper both transports share, so the allowlist has a single chokepoint.
+
+- [GIT-04] **Inject the EXPENSIVE/networked seams into `create_app`, not into the
+  engine.** The remote `/sync` + `/docs-pr` routes test offline because `create_app`
+  grew two optional seams — `cloner` (the git-clone leaf) and `pr_transport_factory`
+  ((provider, remote_url, token) → PRTransport) — both default-real. `/sync` needs
+  neither (a REAL `file://` clone is enough, no PR), but `/docs-pr` CANNOT build a
+  transport from a `file://` URL (`_parse_remote` rejects an empty host), so the
+  factory injection is the only way to exercise the heal→plan→open path offline. →
+  When a route composes a network op the engine can't fake, give `create_app` an
+  injectable factory for it; the default stays the real thing.
+- [GIT-04] **`file://` must be allowed by the SSRF guard — that's what makes the
+  real-git e2e offline.** The host allowlist (github.com/gitlab.com +
+  `$CDMON_ALLOWED_GIT_HOSTS`) gates `https://`; `file://` (a local path/mirror, no
+  network egress) is allowed, which is exactly how the demo + route e2es clone a real
+  repo with zero network. Non-https / non-allowlisted-host → loud 400.
+- [GIT-04] **Seal at the route, fail LOUD on a bad KEK — never silently downgrade.**
+  `register` seals `provider_secret` → `set_provider_secret`; `/sync` + `/docs-pr`
+  open it and hand the PLAINTEXT to the clone/transport. A missing/wrong
+  `$CDMON_SECRET_KEY` is a 500 (server misconfig) at BOTH seal-time and open-time, not
+  a fallback to an unauthenticated clone. The seal block only runs when a
+  `provider_secret` is actually present, so every pre-GIT-04 register is byte-identical
+  (the regression suites stayed green untouched). To test the open-500 path: seal with
+  a KEK at register, then `delenv` the KEK before the sync.
+- [GIT-04] **`/docs-pr`'s clone needs NO git for the heal.** `sync_pr(monitor)` only
+  reads/writes files via the Monitor — it never shells to git — so a `/docs-pr` clone
+  can be a plain dir tree (a fake cloner copytree'ing a fixture works), whereas `/sync`
+  → `run_sync` DOES run `git rev-parse`, so its clone must be a real git repo. Same
+  `cloned_repo` seam, different fixture needs per route.
+
+- [GIT-05] **PHASE 2 is just a credential SOURCE swap — `from_credential` was
+  unnecessary.** A minted App/OAuth token is a plain string, so the route mints it
+  (`gitauth.mint_provider_token`) then reuses the PHASE-1 `from_repo(remote_url,
+  token)` + the clone seam VERBATIM. The ONLY new surface is `gitauth.py` (the mint) +
+  `RepoIdentity.provider_kind` (the dispatch hint) + a `_resolve_provider_token`
+  helper that, by `provider_kind`, either replays the opened secret (`None`/`token`,
+  PHASE 1) or mints from it (`github-app`/`gitlab-oauth`, PHASE 2). → Before adding
+  parallel constructors for a new auth mode, check whether the existing one composes
+  once you reduce the new mode to the same primitive (here, a token string).
+- [GIT-05] **RS256 = RSA only: narrow the key for mypy AND as a real check.**
+  `serialization.load_pem_private_key(...)` returns a key UNION; `.sign(input,
+  PKCS1v15(), SHA256())` only type-checks for `RSAPrivateKey`. An `isinstance(key,
+  RSAPrivateKey)` guard both satisfies mypy and is a correct loud K8 check (an EC/Ed
+  key → `TransportError`, tested with a generated EC key). The JWT `iat`/`exp` need
+  EPOCH INTS — derive them deterministically from the injected ISO clock string
+  (`_iso_to_epoch`) so the route stays K10, rather than reading a wall clock.
+- [GIT-05] **`cryptography` now has TWO lazy-import sites (`secrets.py`, `gitauth.py`)
+  — both behind the `[server]` extra, neither in the engine core.** Each proves the
+  K0 boundary with its own subprocess test (`import …configsync…; assert 'gitauth' /
+  'cryptography' not in sys.modules`). The lazy import lives INSIDE the function that
+  signs/seals, never at module top, so importing the module is free.

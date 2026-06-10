@@ -88,20 +88,8 @@ body,
 body {
   margin: 0;
   padding: 0;
+  /* Simple, flat near-white canvas — no background texture/grid. */
   background-color: var(--canvas);
-  /* A barely-there atmosphere: a soft emerald wash at the top + a whisper-faint
-     dot field for "tech" texture without busyness. */
-  background-image:
-    radial-gradient(
-      120% 60% at 80% -20%,
-      rgba(13, 159, 110, 0.05),
-      transparent 60%
-    ),
-    radial-gradient(circle at 1px 1px, rgba(17, 24, 39, 0.035) 1px, transparent 0);
-  background-size:
-    100% 100%,
-    26px 26px;
-  background-attachment: fixed;
   color: var(--text);
 }
 

@@ -43,6 +43,7 @@ Cases are grouped by user journey:
 - J. Extractor seam + shell
 - K. Reference & traceability (cdmon documents itself)
 - L. Properties (determinism / authority / fingerprint-tier / anchor invariants)
+- M. Server-side git sync (clone-on-demand + provider credentials, EPIC GIT)
 
 ---
 
@@ -769,3 +770,65 @@ prints the MR plan JSON. `echo "demo/docs/api/core-api.md" | cdmon should-sync
 --config demo/config/cdmon` exits 1 (a doc-only change → skip), while a source path
 exits 0 (proceed). (Live: set GitLab CI env and drop `--dry-run`.)
 Features: FEAT-CLI-008, FEAT-CLI-009, FEAT-CLI-010, FEAT-PR-001, FEAT-PR-002, FEAT-PR-003, FEAT-PR-004, FEAT-PR-005, FEAT-PR-006
+
+---
+
+## M. Server-side git sync (clone-on-demand + provider credentials, EPIC GIT)
+
+The central server here is handed a repo it does NOT hold on disk — only a
+`provider` + `remote_url` (and, for a private repo, a sealed credential). It clones
+the repo on demand, syncs it, and can open a docs PR upstream. The demo proves this
+end to end with NO network by using the committed `demo/` tree as a real `file://`
+git origin (exercised by `tests/system/test_demo_gitsync_e2e.py`).
+
+### DEMO-052 — Clone-on-demand: sync a repo the server does not hold
+**What it shows.** `gitfetch.cloned_repo(RemoteSpec(...), secret)` shallow-clones a
+remote into a throwaway temp tree and yields it for `run_sync(mode="local")`, then
+tears it down (the user/server tree is never mutated). The token reaches git only
+via an ephemeral `GIT_ASKPASS` env helper — never argv or the clone URL. The
+`POST /repos/{id}/sync` route uses this when a repo has a `provider`+`remote_url`
+but no `local_path`, so the demo's documents + coverage surface exactly as for a
+local repo — and adding a file upstream then re-syncing shows it.
+**How to observe.** Git-init a copy of `demo/` as a `file://` origin, register a
+repo with that `remote_url` + `provider: github` (no `local_path`), and
+`POST /repos/<id>/sync` — the response is `fully_synced` with the demo's docs +
+a coverage snapshot. See `test_demo_gitsync_e2e.py::test_demo_clone_on_demand_sync_*`
+and `::test_demo_add_file_to_origin_then_resync_sees_it`.
+Features: FEAT-GITSYNC-001
+
+### DEMO-053 — At-rest sealed credential: seal at register, open at sync
+**What it shows.** A per-repo git PAT is WRITE-ONLY at register and stored
+AES-256-GCM-sealed (`secrets.SecretBox` under `$CDMON_SECRET_KEY`) — never as
+plaintext (the payload JSON is sanitized; the store keeps opaque bytes and never
+imports cryptography). At sync/docs-PR the route opens it and hands the plaintext to
+the clone/transport; a missing/wrong KEK is a loud 500, never a silent downgrade.
+**How to observe.** Register with `provider_secret` + `$CDMON_SECRET_KEY` set; the
+sealed bytes round-trip via `repo_provider_secret` and the plaintext is absent from
+the stored payload. See `test_secrets.py` (seal/open + tamper/KEK failures) and
+`test_server_gitsync.py::test_provider_secret_sealed_then_opened_and_passed_to_cloner`.
+Features: FEAT-GITSYNC-002
+
+### DEMO-054 — Minted short-lived App/OAuth token (the hot token is never stored)
+**What it shows.** For a `provider_kind` of `github-app`/`gitlab-oauth`, the sealed
+credential is a longer-lived secret (an App private key / OAuth refresh token); the
+route mints a SHORT-LIVED access token from it on each op (`gitauth`: an RS256 App
+JWT exchanged for an installation token, or an OAuth refresh grant) and uses THAT to
+clone — so the hot token is never persisted.
+**How to observe.** Register a `github-app` repo with a sealed credential JSON and
+`POST /sync`; the minted token (not the credential) reaches the cloner. See
+`test_gitauth.py` (JWT + mint dispatch) and
+`test_server_gitsync.py::test_phase2_github_app_mints_short_lived_token_then_clones`.
+Features: FEAT-GITSYNC-003
+
+### DEMO-055 — Open a docs PR upstream (GitHub or GitLab)
+**What it shows.** `POST /repos/{id}/docs-pr` clones the repo, heals its docs
+(`syncpr.sync_pr` — region authority honored), plans the PR from the healed docs,
+and opens it through the provider transport. `GitHubTransport` runs the atomic
+git-data flow (ref → tree → commit → branch ref → pull) with no local checkout;
+`from_repo(remote_url, token)` builds either transport from the repo URL; `?dry_run`
+plans without calling the provider.
+**How to observe.** After an upstream drift on the demo origin,
+`POST /repos/<id>/docs-pr` returns `opened: true` with the changed doc paths. See
+`test_pr.py` (the GitHub atomic flow) and
+`test_demo_gitsync_e2e.py::test_demo_docs_pr_after_upstream_drift_opens_pr`.
+Features: FEAT-GITSYNC-004
