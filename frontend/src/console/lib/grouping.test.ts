@@ -51,12 +51,14 @@ describe("buildCoverageRows", () => {
       f("pkg/cli.py", "undocumented"),
       f("setup.py", "documented"),
     ]);
-    // Order: pkg/ (dir d0) → cli.py (d1) → server/ (dir d1) → app.py (d2) → setup.py (d0)
+    // Dirs precede files AT EACH LEVEL (a dir's whole subtree is emitted before
+    // the level's files): pkg/ (d0) → server/ (d1) → app.py (d2) → cli.py (d1)
+    // → setup.py (d0).
     expect(rows.map((r) => [r.kind, r.name, r.depth])).toEqual([
       ["dir", "pkg", 0],
-      ["file", "cli.py", 1],
       ["dir", "server", 1],
       ["file", "app.py", 2],
+      ["file", "cli.py", 1],
       ["file", "setup.py", 0],
     ]);
   });

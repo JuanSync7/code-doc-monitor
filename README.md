@@ -259,8 +259,8 @@ the apply-fix and link→generate flows end-to-end, offline.
 ## Feature catalog & traceability (EPIC R)
 
 A golden **feature catalog** under `feature-doc/catalog/*.yaml` is the single
-source of truth for every feature of code-doc-monitor (197 features across 19
-subsystems; the exact count is the header of `feature-doc/FEATURES.md`). From it,
+source of truth for every feature of code-doc-monitor (19 subsystems; the exact
+feature count is the header of `feature-doc/FEATURES.md`). From it,
 `cdmon wiki` regenerates four artifacts — never hand-edited:
 
 - `feature-doc/FEATURES.md` — the rendered feature reference,
@@ -271,7 +271,8 @@ subsystems; the exact count is the header of `feature-doc/FEATURES.md`). From it
 `cdmon wiki --check` is the CI freshness gate (fails if any wiki is stale).
 `cdmon trace --fail-on-gap` proves every feature traces 1:1 to a demo **and** a
 test by scanning inline `Feature: <id>` tags in `tests/` and `demo/` (currently
-197/197 complete). Both run offline in CI (the `docs:gate` job).
+complete — every catalogued feature has both). Both run offline in CI (the
+`docs:gate` job).
 
 ## Public schema
 
