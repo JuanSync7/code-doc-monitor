@@ -1,4 +1,18 @@
+---
+cdm:
+  audience: user-guide
+  fingerprint: da0e063e607dc1ba
+  fingerprint_tiers:
+    composite: da0e063e607dc1ba
+    signature: da0e063e607dc1ba
+  schema_version: 1.0.0
+---
 # demo-taskflow — a cdmon adopter repo
+
+> A demo adopter repo monitored end-to-end by `cdmon` — including this README,
+> tracked as a user-guide narrative against the `taskflow` core model it
+> describes (FEAT-CONFIGV2-016): edit `model.py`'s public surface and this README
+> drifts for review; a comment-only change is a non-event.
 
 A small, self-contained adopter repo that **code-doc-monitor** (`cdmon`)
 monitors end to end via the multi-file `config/cdmon/` layout. It exists to drive
@@ -57,6 +71,7 @@ symbols` region that cdmon keeps in sync with the code surface:
 | `core-api` | `docs/api/core-api.md` | `eng-guide` | the full core surface (model + engine) |
 | `getting-started` | `docs/guide/getting-started.md` | `user-guide` | a friendly tutorial over the key types |
 | `io-api` | `docs/api/io-api.md` | `eng-guide` | the io surface (storage + report) |
+| `readme` | `README.md` | `user-guide` | **this file** — a narrative tracked against `model.py` (no managed region; FEAT-CONFIGV2-016) |
 
 `getting-started` is a **user-guide** document (`audience: user-guide`). Its
 single `symbols` region uses **symbol-selective** `code_refs` — `Task` from
