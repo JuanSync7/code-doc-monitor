@@ -276,7 +276,7 @@ exist, no duplicate doc id, no two units claim the same dir) and the index↔uni
 reverse invariant. The repo root is the one shared resolver.
 **How to observe.** Read `demo/config/cdmon/index.yaml`, `core.yaml`, `io.yaml`,
 `ignore.yaml`; load via `load_bundle(demo/config/cdmon)` — one `MonitorConfig`,
-three documents, two units.
+four documents, two units.
 Features: FEAT-CONFIGV2-001, FEAT-CONFIGV2-002, FEAT-CONFIGV2-003, FEAT-CONFIGV2-004, FEAT-CONFIGV2-008, FEAT-CONFIGV2-010, FEAT-CONFIG-001, FEAT-CONFIG-002
 
 ### DEMO-020 — Nested deepest-wins attribution + ignore translation

@@ -210,9 +210,10 @@ source .venv/bin/activate          # from the repo root
 python scripts/seed_demo.py        # serves the seeded central dashboard on :33333
 ```
 
-`demo-taskflow` appears alongside the other seeded repos; open it to see the two
-units' documents (`core-api`, `io-api`) and their `code_refs`, then click
-**Sync (local)** to re-run the sync against this `local_path`.
+`demo-taskflow` appears alongside the other seeded repos; open it to see its four
+documents (across the `core` and `io` units, including the monitored `readme`)
+and their `code_refs`, then click **Sync (local)** to re-run the sync against this
+`local_path`.
 
 ## A note on git-mode sync
 
@@ -246,7 +247,7 @@ multi-commit history** (one commit per stage of the project's evolution, mirrori
 (pinned git identity + a fixed commit date). It then prints a network-free recipe
 (an in-process `TestClient`, no `curl`) that registers the `file://` origin with
 the server and runs a clone-on-demand `POST /sync` over it. The server clones the
-origin, surfaces the demo's three documents, and reports the same **80%** coverage
+origin, surfaces the demo's four documents, and reports the same **80%** coverage
 (the lone `scheduler.py` gap) it does for the local tree.
 
 The same flow is proven for *any* git repo — not just the demo — in
