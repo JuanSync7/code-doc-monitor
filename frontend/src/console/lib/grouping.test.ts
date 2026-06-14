@@ -4,6 +4,8 @@ import {
   dirPaths,
   isReadmePath,
   isRowVisible,
+  isTestDocPath,
+  partitionDocs,
   partitionReadme,
 } from "./grouping";
 import type { CoverageFile } from "../types";
@@ -35,6 +37,49 @@ describe("partitionReadme", () => {
     const { main, readme } = partitionReadme(items, (i) => i.path);
     expect(main.map((i) => i.path)).toEqual(["src/a.py", "docs/b.md"]);
     expect(readme.map((i) => i.path)).toEqual(["README.md", "pkg/README.md"]);
+  });
+});
+
+describe("isTestDocPath", () => {
+  it("matches a path under a top-level test-docs/ directory", () => {
+    expect(isTestDocPath("test-docs/x.md")).toBe(true);
+    expect(isTestDocPath("test-docs/smoke/test_boundaries.md")).toBe(true);
+    expect(isTestDocPath("test-docs")).toBe(true);
+  });
+
+  it("does not match non-test-doc paths (incl. lookalike directories)", () => {
+    expect(isTestDocPath("docs/api/x.md")).toBe(false);
+    expect(isTestDocPath("README.md")).toBe(false);
+    expect(isTestDocPath("src/test-docs-fake/x.md")).toBe(false);
+    expect(isTestDocPath("my-test-docs/x.md")).toBe(false);
+  });
+});
+
+describe("partitionDocs", () => {
+  it("splits three ways (tests/readme/main) preserving order, tests winning", () => {
+    const items = [
+      { path: "src/a.py" },
+      { path: "README.md" },
+      { path: "test-docs/test_engine.md" },
+      { path: "docs/b.md" },
+      { path: "pkg/README.md" },
+      { path: "test-docs/smoke/test_boundaries.md" },
+    ];
+    const { main, readme, tests } = partitionDocs(items, (i) => i.path);
+    expect(main.map((i) => i.path)).toEqual(["src/a.py", "docs/b.md"]);
+    expect(readme.map((i) => i.path)).toEqual(["README.md", "pkg/README.md"]);
+    expect(tests.map((i) => i.path)).toEqual([
+      "test-docs/test_engine.md",
+      "test-docs/smoke/test_boundaries.md",
+    ]);
+  });
+
+  it("routes a test-docs README to tests (test-doc precedence over README)", () => {
+    const items = [{ path: "test-docs/README.md" }];
+    const { main, readme, tests } = partitionDocs(items, (i) => i.path);
+    expect(main).toEqual([]);
+    expect(readme).toEqual([]);
+    expect(tests.map((i) => i.path)).toEqual(["test-docs/README.md"]);
   });
 });
 

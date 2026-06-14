@@ -9,7 +9,12 @@ import {
 import { MemoryRouter } from "react-router-dom";
 import Documents, { type DocumentsApi } from "./Documents";
 import type { ConfigDocumentTree, SyncRun } from "../types";
-import { configDocuments, readmeDocTree, syncRunGit } from "../test/fixtures";
+import {
+  configDocuments,
+  readmeDocTree,
+  syncRunGit,
+  testDocTree,
+} from "../test/fixtures";
 
 function fakeApi(overrides: Partial<DocumentsApi> = {}): DocumentsApi {
   return {
@@ -146,5 +151,21 @@ describe("Documents page", () => {
     const readmeRow = within(section).getByRole("row", { name: /readme/i });
     expect(readmeRow).toHaveTextContent("README.md");
     expect(readmeRow).toHaveTextContent("user-guide");
+  });
+
+  it("lists test docs in a separate section, apart from the engineering docs", async () => {
+    renderDocuments(
+      fakeApi({ documentsFor: async () => [...configDocuments, testDocTree] }),
+    );
+
+    // The engineering documents render in the main table.
+    await screen.findByRole("row", { name: /guide\/install/ });
+
+    // The test doc appears under its OWN "Test docs" heading/section.
+    const heading = screen.getByRole("heading", { name: /test docs/i });
+    const section = heading.closest("div")!;
+    const testRow = within(section).getByRole("row", { name: /testdoc-engine/ });
+    expect(testRow).toHaveTextContent("test-docs/test_engine.md");
+    expect(testRow).toHaveTextContent("eng-guide");
   });
 });

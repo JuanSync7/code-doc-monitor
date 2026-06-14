@@ -15,6 +15,7 @@ import {
   records,
   resolutions,
   syncRunGit,
+  testDocRecord,
 } from "../test/fixtures";
 
 interface RecordCall {
@@ -465,5 +466,21 @@ describe("RepoDetail page", () => {
     const readmeRow = within(section).getByRole("row", { name: /readme/i });
     expect(readmeRow).toHaveTextContent("README.md");
     expect(readmeRow).toHaveTextContent("signature_changed");
+  });
+
+  it("lists test-doc drift in a separate 'Test docs' section", async () => {
+    const { api } = fakeApi({
+      recordsFor: async () => [...records, testDocRecord],
+    });
+    renderDetail(api);
+
+    // Engineering records render in the main timeline…
+    await screen.findByRole("row", { name: /guide\/install/ });
+    // …and the test-doc record under its OWN "Test docs" section.
+    const heading = screen.getByRole("heading", { name: /test docs/i });
+    const section = heading.closest("div")!;
+    const testRow = within(section).getByRole("row", { name: /testdoc-engine/ });
+    expect(testRow).toHaveTextContent("test-docs/test_engine.md");
+    expect(testRow).toHaveTextContent("signature_changed");
   });
 });

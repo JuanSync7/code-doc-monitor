@@ -12,6 +12,14 @@ export function isReadmePath(path: string): boolean {
   return /^readme(\.|$)/.test(base);
 }
 
+/** True when a repo-relative path lives under a top-level `test-docs/` directory
+ * — i.e. its FIRST segment is `test-docs` (e.g. `test-docs/smoke/test_x.md`), or
+ * the path IS that directory. This parallels `isReadmePath`: a deeper directory
+ * such as `src/test-docs-fake/x.md` or `my-test-docs/x.md` is NOT a test doc. */
+export function isTestDocPath(path: string): boolean {
+  return /^test-docs\//.test(path) || path === "test-docs";
+}
+
 /** Split a list into its README entries and the rest, preserving order. The
  * caller supplies how to read each item's path (a coverage file's `path`, a
  * document's `path`, a record's `doc_path`). */
@@ -26,6 +34,27 @@ export function partitionReadme<T>(
     else main.push(item);
   }
   return { main, readme };
+}
+
+/** Three-way split of a list — test docs, README/narrative docs, and the rest —
+ * preserving input order in each bucket. The caller supplies how to read each
+ * item's path. Precedence: a test doc (under `test-docs/`) takes `tests`, else a
+ * README takes `readme`, else the item is `main`. Used by the document/drift/
+ * mapping views to surface README and TEST DOC sections separately. */
+export function partitionDocs<T>(
+  items: readonly T[],
+  pathOf: (item: T) => string,
+): { main: T[]; readme: T[]; tests: T[] } {
+  const main: T[] = [];
+  const readme: T[] = [];
+  const tests: T[] = [];
+  for (const item of items) {
+    const path = pathOf(item);
+    if (isTestDocPath(path)) tests.push(item);
+    else if (isReadmePath(path)) readme.push(item);
+    else main.push(item);
+  }
+  return { main, readme, tests };
 }
 
 /** One row of the coverage hierarchy: either a directory node (with a roll-up of

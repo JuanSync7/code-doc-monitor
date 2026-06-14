@@ -342,6 +342,81 @@ export const readmeEditableDoc: EditableDocument = {
   ],
 };
 
+// ── Test-doc fixtures: a monitored TEST DOC (under test-docs/) ──────────────
+
+/** A test-doc tree — an eng-guide doc under `test-docs/`, tracked against the
+ * test file it documents. Surfaced in its OWN "Test docs" section. */
+export const testDocTree: ConfigDocumentTree = {
+  document: {
+    repo_id: "acme/widget",
+    doc_id: "testdoc-engine",
+    path: "test-docs/test_engine.md",
+    audience: "eng-guide",
+    unit: "core",
+    region_keys: [],
+    context_refs: [],
+    sync_kind: "git",
+    ref: "main",
+    synced_at: "2026-06-04T09:00:00Z",
+  },
+  code_refs: [
+    {
+      repo_id: "acme/widget",
+      doc_id: "testdoc-engine",
+      path: "tests/unit/test_engine.py",
+      symbols: [],
+      unit: "core",
+      sync_kind: "git",
+    },
+  ],
+};
+
+/** A drift record against a test doc (its tracked test surface moved). */
+export const testDocRecord: ReviewRecord = {
+  schema_version: "1.0.0",
+  record_id: "rec-testdoc-1",
+  doc_id: "testdoc-engine",
+  doc_path: "test-docs/test_engine.md",
+  audience: "eng-guide",
+  drift_kind: "signature_changed",
+  drift_detail: "a test case was renamed",
+  cause: "the test doc's case list is stale",
+  verdict: "FIX",
+  fix: { rationale: "regenerate the case list", new_doc_text: "…" },
+  surface_hash: "dddd4444",
+  backend_kind: "mock",
+  detected_at: "2026-06-04T12:30:00Z",
+  resolved_at: "2026-06-04T12:30:00Z",
+  config_snapshot: {},
+  source_sha: "sha-ddd",
+};
+
+/** A test-doc entry for the editable (Mapping) tree. */
+export const testDocEditableDoc: EditableDocument = {
+  document: {
+    repo_id: "acme/widget",
+    doc_id: "testdoc-engine",
+    path: "test-docs/test_engine.md",
+    audience: "eng-guide",
+    unit: "core",
+    region_keys: [],
+    context_refs: [],
+    sync_kind: "local",
+    ref: "local",
+    synced_at: "2026-06-06T09:00:00Z",
+  },
+  code_refs: [
+    {
+      repo_id: "acme/widget",
+      doc_id: "testdoc-engine",
+      path: "tests/unit/test_engine.py",
+      symbols: [],
+      unit: "core",
+      sync_kind: "local",
+    },
+  ],
+};
+
 // ── W-03 fixtures (the Y-02 SyncRun summary) ────────────────────────────────
 
 /** A git sync that is behind main with two drifts (the "needs attention" case). */

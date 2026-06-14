@@ -18,7 +18,7 @@ import { useApi } from "../hooks/useApi";
 import SyncControls, { type SyncControlsApi } from "../components/SyncControls";
 import MappingTicketForm from "../components/MappingTicketForm";
 import Modal from "../components/Modal";
-import { partitionReadme } from "../lib/grouping";
+import { partitionDocs } from "../lib/grouping";
 import type {
   ConfigEdit,
   EditableConfigTree,
@@ -221,11 +221,13 @@ export function Mapping({ api = apiClient, repoId: repoIdProp }: MappingProps) {
 
   const tree = state.data;
 
-  // README / narrative docs get their OWN mapping section (FEAT-CONFIGV2-016).
-  const { main: mainDocs, readme: readmeDocs } = partitionReadme(
-    tree.documents,
-    (entry) => entry.document.path,
-  );
+  // README / narrative docs and TEST DOCS each get their OWN mapping section
+  // (FEAT-CONFIGV2-016 + test docs).
+  const {
+    main: mainDocs,
+    readme: readmeDocs,
+    tests: testDocs,
+  } = partitionDocs(tree.documents, (entry) => entry.document.path);
 
   const onStaged = () => {
     setEditsReload((n) => n + 1);
@@ -278,6 +280,17 @@ export function Mapping({ api = apiClient, repoId: repoIdProp }: MappingProps) {
           title="README files"
           emptyText="No README files for this repo."
           documents={readmeDocs}
+          expanded={expanded}
+          onToggle={toggleExpanded}
+          onEditMapping={(docId) => setForm({ docId })}
+        />
+      ) : null}
+
+      {testDocs.length > 0 ? (
+        <DocumentsSection
+          title="Test docs"
+          emptyText="No test docs for this repo."
+          documents={testDocs}
           expanded={expanded}
           onToggle={toggleExpanded}
           onEditMapping={(docId) => setForm({ docId })}
