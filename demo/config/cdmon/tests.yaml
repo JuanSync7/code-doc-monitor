@@ -1,0 +1,53 @@
+---
+# Frontmatter (REQUIRED): this unit's identity + provenance. `unit` MUST match the
+# file stem (K8).
+cdmon-config-version: "2.0.0"
+unit: tests
+title: "Taskflow test suite"
+owner: demo-team
+created: "2026-06-13"
+updated: "2026-06-13"
+---
+# The test→test-doc MIRROR (FEAT-CONFIGV2-017), demonstrated 1:1. Tests are just
+# `.py` files, so the SAME machinery that syncs src/taskflow → docs/ syncs
+# tests/ → test-docs/: one test-doc per test file, each tracked against the test
+# file's `test_*` functions via a managed `symbols` region. Edit/rename a test and
+# its test-doc drifts for review; `cdmon monitor --apply` heals it.
+
+# This unit's coverage scope: the demo's test tree.
+dir-covered:
+  - tests
+
+source-files-format:
+  - ".py"
+
+# One test-doc per test file (1:1 with src→doc), eng-guide so the region lists every
+# test function (and any private helper) — the honest test catalog.
+documents:
+  - id: test-engine
+    path: test-docs/test_engine.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: tests/test_engine.py
+
+  - id: test-io
+    path: test-docs/test_io.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: tests/test_io.py
+
+  - id: test-model
+    path: test-docs/test_model.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: tests/test_model.py
+
+  - id: test-scheduler
+    path: test-docs/test_scheduler.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: tests/test_scheduler.py

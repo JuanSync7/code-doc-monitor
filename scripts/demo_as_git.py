@@ -74,8 +74,16 @@ DEMO_HISTORY: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("pyproject.toml", ".github", "CONTRIBUTING.md", "CHANGELOG.md"),
     ),
     (
-        "docs: adopt code-doc-monitor (config + docs + templates)",
-        ("config", "docs", "templates", "README.md", "DEMOS.md", "walkthrough.py"),
+        "docs: adopt code-doc-monitor (config + docs + test-docs + templates)",
+        (
+            "config",
+            "docs",
+            "test-docs",
+            "templates",
+            "README.md",
+            "DEMOS.md",
+            "walkthrough.py",
+        ),
     ),
 )
 

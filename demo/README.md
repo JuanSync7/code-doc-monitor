@@ -41,14 +41,15 @@ cdmon never counts it toward coverage.
 `core/scheduler.py` is a genuine public module that **no document references**.
 Because it is `.py` and under the `core` unit's `dir-covered`, it counts toward
 the denominator and surfaces as a gap. The committed `coverage.rpt` therefore
-reports overall coverage of **80%** (`core` unit 66.67%, `io` unit 100%), with
-`scheduler.py` listed under `undocumented:` and a `suggested_unit` of `core`. It
-is a COVERAGE gap, not drift — `cdmon check` still exits 0.
+reports overall coverage of **88.9%** (`core` unit 66.67%, `io` unit 100%, `tests`
+unit 100%), with `scheduler.py` the lone file listed under `undocumented:` and a
+`suggested_unit` of `core`. It is a COVERAGE gap, not drift — `cdmon check` still
+exits 0.
 
 It is left unlinked **on purpose**: on the dashboard's **Mapping page** (`/repos/
 demo-taskflow/mapping`) `scheduler.py` appears under "Unlinked source files", and
 you can click "Link to a document…", pick `core-api`, and hit **Generate / make
-live** to watch the gap close — coverage jumps from 80% to 100% and the doc is
+live** to watch the gap close — coverage jumps from 88.9% to 100% and the doc is
 regenerated to include `scheduler.py`'s surface. The `walkthrough.py` tour drives
 this exact flow offline (its `[8/8] link → generate` section).
 
@@ -59,12 +60,14 @@ this exact flow offline (its `[8/8] link → generate` section).
 | `index.yaml`    | repo identity (`demo-taskflow`), `root: "../.."`, mock backend, `__init__.py` waivers, the unit index, ignore/doc-style pointers |
 | `core.yaml`     | unit owning `src/taskflow/core` → doc `core-api` |
 | `io.yaml`       | unit owning `src/taskflow/io` → doc `io-api` |
+| `tests.yaml`    | unit owning `tests/` → four **test-docs** (the test→test-doc mirror, FEAT-CONFIGV2-017) |
 | `ignore.yaml`   | `gitignore: true` + `*.rpt`/`*.log`/`__pycache__` patterns |
 | `doc-style.yaml`| writing-template map (defaults + per-doc) |
 | `coverage.rpt`  | **generated** by `cdmon rpt --write` |
 
-The docs the units carry live under `docs/` with a managed `CDM:BEGIN/END
-symbols` region that cdmon keeps in sync with the code surface:
+The docs the units carry live under `docs/` (and `test-docs/`, below) with a
+managed `CDM:BEGIN/END symbols` region that cdmon keeps in sync with the code
+surface:
 
 | doc id | path | audience | what it shows |
 |--------|------|----------|---------------|
@@ -72,11 +75,38 @@ symbols` region that cdmon keeps in sync with the code surface:
 | `getting-started` | `docs/guide/getting-started.md` | `user-guide` | a friendly tutorial over the key types |
 | `io-api` | `docs/api/io-api.md` | `eng-guide` | the io surface (storage + report) |
 | `readme` | `README.md` | `user-guide` | **this file** — a narrative tracked against `model.py` (no managed region; FEAT-CONFIGV2-016) |
+| `test-engine` | `test-docs/test_engine.md` | `eng-guide` | the `test_engine.py` test catalog (the test→test-doc mirror) |
+| `test-io` | `test-docs/test_io.md` | `eng-guide` | the `test_io.py` test catalog |
+| `test-model` | `test-docs/test_model.md` | `eng-guide` | the `test_model.py` test catalog |
+| `test-scheduler` | `test-docs/test_scheduler.md` | `eng-guide` | the `test_scheduler.py` test catalog |
 
 `getting-started` is a **user-guide** document (`audience: user-guide`). Its
 single `symbols` region uses **symbol-selective** `code_refs` — `Task` from
 `model.py` and `Engine` from `engine.py` — so it renders a focused "key types"
 table over the two files (already documented by `core-api`, so it adds no gap).
+
+### The test→test-doc mirror — `tests/` → `test-docs/` (FEAT-CONFIGV2-017)
+
+Tests are just `.py` files, so the **same** machinery that syncs source → docs
+syncs **tests → test-docs**: `tests.yaml` is a unit whose `code_refs` point at the
+demo's test files and whose documents live under a top-level `test-docs/`
+directory. Each demo test file maps to **exactly one** test-doc (1:1), each with a
+managed `symbols` region listing that file's `test_*` functions:
+
+| test file | test-doc |
+|-----------|----------|
+| `tests/test_engine.py`    | `test-docs/test_engine.md`    |
+| `tests/test_io.py`        | `test-docs/test_io.md`        |
+| `tests/test_model.py`     | `test-docs/test_model.md`     |
+| `tests/test_scheduler.py` | `test-docs/test_scheduler.md` |
+
+Add, rename, or remove a test and its test-doc drifts for review; `cdmon monitor
+--apply` heals it — exactly like a source doc. The `tests` unit is fully
+documented (100%), so the only remaining gap is still the deliberate
+`scheduler.py` source gap. Note the symmetry: `scheduler.py`'s SOURCE is
+undocumented (the gap), yet its TESTS are documented in `test-docs/test_scheduler.md`.
+On the console these test-docs appear in their own **Test docs** section on the
+Documents, Drift, and Mapping pages.
 
 ### `context_refs` — generation "glance-through" references
 
@@ -94,7 +124,7 @@ context_refs:
 
 `context_refs` are **additive and NOT coverage**: distinct from `code_refs` (the
 documented surface), they never enter the coverage denominator, never cause drift,
-and never count toward the `.rpt` — adding them leaves the demo's 80% unchanged and
+and never count toward the `.rpt` — adding them leaves the demo's 88.9% unchanged and
 `cdmon check`/`lint`/`rpt` byte-identical. They flow into the editable mapping tree
 (shown on the Mapping page under the document, visually distinct from `code_refs`)
 and into the generation prompt as reference material.
@@ -210,8 +240,9 @@ source .venv/bin/activate          # from the repo root
 python scripts/seed_demo.py        # serves the seeded central dashboard on :33333
 ```
 
-`demo-taskflow` appears alongside the other seeded repos; open it to see its four
-documents (across the `core` and `io` units, including the monitored `readme`)
+`demo-taskflow` appears alongside the other seeded repos; open it to see its eight
+documents (across the `core`, `io`, and `tests` units — including the monitored
+`readme` and the four **test-docs**)
 and their `code_refs`, then click **Sync (local)** to re-run the sync against this
 `local_path`.
 
@@ -247,7 +278,7 @@ multi-commit history** (one commit per stage of the project's evolution, mirrori
 (pinned git identity + a fixed commit date). It then prints a network-free recipe
 (an in-process `TestClient`, no `curl`) that registers the `file://` origin with
 the server and runs a clone-on-demand `POST /sync` over it. The server clones the
-origin, surfaces the demo's four documents, and reports the same **80%** coverage
+origin, surfaces the demo's eight documents, and reports the same **88.9%** coverage
 (the lone `scheduler.py` gap) it does for the local tree.
 
 The same flow is proven for *any* git repo — not just the demo — in

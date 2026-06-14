@@ -56,11 +56,12 @@ _NOW = "2026-06-07T00:00:00Z"
 _REPO_ROOT = REPO_ROOT
 _DEMO_DIR = _REPO_ROOT / "demo"
 
-# The seven code refs the demo's documents reference, in load order (index units
+# The eleven code refs the demo's documents reference, in load order (index units
 # order, then in-file documents order): core.yaml carries core-api, then the
 # user-guide getting-started (symbol-selective refs over the same two core
 # files), then the user-guide README (a narrative tracked against model.py,
-# FEAT-CONFIGV2-016); finally io.yaml carries io-api.
+# FEAT-CONFIGV2-016); io.yaml carries io-api; finally tests.yaml carries the four
+# test-docs (FEAT-CONFIGV2-017), one per demo test file (the test→test-doc mirror).
 _DEMO_CODE_REFS = (
     "src/taskflow/core/model.py",
     "src/taskflow/core/engine.py",
@@ -69,8 +70,21 @@ _DEMO_CODE_REFS = (
     "src/taskflow/core/model.py",
     "src/taskflow/io/storage.py",
     "src/taskflow/io/report.py",
+    "tests/test_engine.py",
+    "tests/test_io.py",
+    "tests/test_model.py",
+    "tests/test_scheduler.py",
 )
-_DEMO_DOC_IDS = ("core-api", "getting-started", "readme", "io-api")
+_DEMO_DOC_IDS = (
+    "core-api",
+    "getting-started",
+    "readme",
+    "io-api",
+    "test-engine",
+    "test-io",
+    "test-model",
+    "test-scheduler",
+)
 
 
 # Make scripts/seed_demo importable (it lives outside the package, like the
@@ -137,8 +151,8 @@ def test_central_token_less_local_sync_succeeds_with_counts() -> None:
     # whereas "the demo has no drift" is the real invariant under test.)
     assert run["drift"]["ok"] is True
     assert run["drift"]["drift_count"] == 0
-    assert run["document_count"] == 4
-    assert run["code_ref_count"] == 7
+    assert run["document_count"] == 8
+    assert run["code_ref_count"] == 11
 
 
 def test_central_sync_state_returns_the_run() -> None:
@@ -149,7 +163,7 @@ def test_central_sync_state_returns_the_run() -> None:
         ).json()
     assert state is not None
     assert state["sync_kind"] == "local"
-    assert state["document_count"] == 4
+    assert state["document_count"] == 8
 
 
 def test_central_seeded_demo_has_records_and_coverage() -> None:
@@ -163,10 +177,11 @@ def test_central_seeded_demo_has_records_and_coverage() -> None:
     assert records, "demo-taskflow should have seeded heal records"
     assert {r["doc_id"] for r in records} <= {"core-api", "getting-started"}
     assert all(r["verdict"] == "FIX" for r in records)
-    # A coverage snapshot showing the deliberate scheduler.py gap (~80% files).
+    # A coverage snapshot showing the deliberate scheduler.py gap (~88.9% files now
+    # that the test→test-doc mirror adds the fully-documented `tests` unit).
     assert coverage, "demo-taskflow should have a seeded coverage snapshot"
     latest = coverage[-1]
-    assert latest["percent_files"] == 80.0
+    assert latest["percent_files"] == pytest.approx(88.88888888888889)
     undocumented = [f["path"] for f in latest["files"] if f["status"] == "undocumented"]
     assert "src/taskflow/core/scheduler.py" in undocumented
 
@@ -270,8 +285,8 @@ def test_git_mode_reads_config_in_subdir(tmp_path: Path) -> None:
     result = run_sync(sub, "demo-taskflow", mode="git", default_branch="main", now=_NOW)
     run = result.run
     assert run.sync_kind == "git"
-    assert run.document_count == 4
-    assert run.code_ref_count == 7
+    assert run.document_count == 8
+    assert run.code_ref_count == 11
     assert run.commits_ahead == 0
     # The committed demo docs are healed in-sync, so main is fully synced.
     assert run.fully_synced is True
@@ -429,15 +444,18 @@ def test_demo_rpt_matches_committed_coverage_report() -> None:
     # The rebuilt report renders byte-identical to the committed file.
     assert render_rpt(rebuilt) == (cfg / "coverage.rpt").read_text(encoding="utf-8")
 
-    # Overall coverage now reflects the one real gap: 4 of 5 eligible files
-    # documented (the 2 __init__.py are waived out of the denominator) = 80%.
-    assert committed.summary.percent == 80.0
+    # Overall coverage now reflects the one real gap across source + tests: 8 of 9
+    # eligible files documented (the 3 __init__.py are waived out of the
+    # denominator) = 88.89% (rounded in the .rpt summary).
+    assert committed.summary.percent == 88.89
     by_unit = {u.unit: u for u in committed.units}
     # The `core` unit carries the gap (scheduler.py): 2 of 3 documented = 66.67.
     assert by_unit["core"].percent == 66.67
     assert "src/taskflow/core/scheduler.py" in by_unit["core"].uncovered
-    # The `io` unit is still fully documented.
+    # The `io` unit is fully documented; so is the `tests` unit — the test→test-doc
+    # mirror (FEAT-CONFIGV2-017) maps every demo test file to a test-doc 1:1.
     assert by_unit["io"].percent == 100.0
+    assert by_unit["tests"].percent == 100.0
 
     # scheduler.py surfaces as undocumented with `core` as its suggested unit.
     gaps = {g.path: g for g in committed.undocumented}

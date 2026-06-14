@@ -182,7 +182,18 @@ _CASES = (
         name="demo",
         default_branch="main",
         build=lambda root: _DEMO,  # the live demo tree (copied by repo_from_tree)
-        doc_ids=frozenset({"core-api", "getting-started", "readme", "io-api"}),
+        doc_ids=frozenset(
+            {
+                "core-api",
+                "getting-started",
+                "readme",
+                "io-api",
+                "test-engine",
+                "test-io",
+                "test-model",
+                "test-scheduler",
+            }
+        ),
         covered_new_file="src/taskflow/core/extra.py",
         drift_file="src/taskflow/core/model.py",
     ),
@@ -386,9 +397,15 @@ def test_clone_on_demand_demo_sync_is_store_parity(store: Any, tmp_path: Path) -
         "getting-started",
         "readme",
         "io-api",
+        "test-engine",
+        "test-io",
+        "test-model",
+        "test-scheduler",
     }
     cov = client.get(f"/repos/{repo_id}/coverage").json()[-1]
-    assert cov["percent_files"] == 80.0  # the demo's pinned coverage, off a real clone
+    # the demo's pinned coverage off a real clone: 8/9 files (the scheduler.py gap),
+    # now that the test→test-doc mirror adds the fully-documented tests unit.
+    assert cov["percent_files"] == pytest.approx(88.88888888888889)
 
 
 # --------------------------------------------------------------------------- #
@@ -444,7 +461,7 @@ def _load_demo_as_git() -> Any:
 
 def test_demo_as_git_materializes_a_syncable_repo(tmp_path: Path) -> None:
     """``materialize`` builds a real multi-commit git repo + bare origin the
-    clone-on-demand server can sync — the demo's pinned 80% coverage off git."""
+    clone-on-demand server can sync — the demo's pinned 88.9% coverage off git."""
     demo_as_git = _load_demo_as_git()
     paths = demo_as_git.materialize(tmp_path / "out")
 
@@ -477,9 +494,13 @@ def test_demo_as_git_materializes_a_syncable_repo(tmp_path: Path) -> None:
         "getting-started",
         "readme",
         "io-api",
+        "test-engine",
+        "test-io",
+        "test-model",
+        "test-scheduler",
     }
     cov = client.get("/repos/demo-taskflow/coverage").json()[-1]
-    assert cov["percent_files"] == 80.0
+    assert cov["percent_files"] == pytest.approx(88.88888888888889)
     assert "src/taskflow/core/scheduler.py" in {
         f["path"] for f in cov["files"] if f["status"] == "undocumented"
     }

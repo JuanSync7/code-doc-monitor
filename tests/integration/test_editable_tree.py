@@ -101,9 +101,10 @@ def test_demo_ignored_files_includes_notes_log() -> None:
     assert ignored == sorted(ignored)
 
 
-def test_demo_unit_files_are_the_two_units() -> None:
+def test_demo_unit_files_are_the_three_units() -> None:
     body = _demo_tree()
-    assert body["unit_files"] == ["core", "io"]
+    # core + io (source) and tests (the test→test-doc mirror, FEAT-CONFIGV2-017).
+    assert body["unit_files"] == ["core", "io", "tests"]
 
 
 def test_demo_doc_styles_list_the_vendored_template_stems() -> None:
