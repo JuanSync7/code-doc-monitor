@@ -288,7 +288,7 @@ _DEMO_DRIFT_INSERT = '''\
 def _demo_snapshot() -> dict | None:
     """A REAL coverage snapshot from the demo's own ``config/cdmon`` (M-03).
 
-    Shows the demo's deliberate gap (``scheduler.py`` undocumented → ~80% file
+    Shows the demo's deliberate gap (``scheduler.py`` undocumented → ~88.9% file
     coverage) on the dashboard Coverage page. Best-effort: returns ``None`` if the
     demo config/scan is unavailable (seeding must never raise, K8/K10).
     """

@@ -172,8 +172,9 @@ Features: FEAT-COVERAGE-002, FEAT-COVERAGE-004
 ### DEMO-011 — coverage.rpt: the dir-layout report with suggested units
 **What it shows.** `cdmon rpt` builds the per-unit `coverage.rpt` over the SAME
 coverage facts as `cdmon coverage`, reusing the effective coverage derived from
-the dir layout. The committed report shows overall 80%, `core` 66.67%, `io` 100%,
-and lists `scheduler.py` under `undocumented:` with a `suggested_unit` of `core`.
+the dir layout. The committed report shows overall 88.9%, `core` 66.67%, `io` 100%,
+`tests` 100%, and lists `scheduler.py` under `undocumented:` with a `suggested_unit`
+of `core`.
 `--write` is byte-stable / idempotent and round-trips through parse.
 **How to observe.** Read the committed `demo/config/cdmon/coverage.rpt`; re-run
 `cdmon rpt --write --config-dir demo/config/cdmon` (byte-identical); test
@@ -275,8 +276,8 @@ a `ConfigBundle`. `load_bundle` enforces the cross-file invariants (unit files
 exist, no duplicate doc id, no two units claim the same dir) and the index↔units
 reverse invariant. The repo root is the one shared resolver.
 **How to observe.** Read `demo/config/cdmon/index.yaml`, `core.yaml`, `io.yaml`,
-`ignore.yaml`; load via `load_bundle(demo/config/cdmon)` — one `MonitorConfig`,
-four documents, two units.
+`tests.yaml`, `ignore.yaml`; load via `load_bundle(demo/config/cdmon)` — one
+`MonitorConfig`, eight documents, three units.
 Features: FEAT-CONFIGV2-001, FEAT-CONFIGV2-002, FEAT-CONFIGV2-003, FEAT-CONFIGV2-004, FEAT-CONFIGV2-008, FEAT-CONFIGV2-010, FEAT-CONFIG-001, FEAT-CONFIG-002
 
 ### DEMO-020 — Nested deepest-wins attribution + ignore translation
@@ -344,7 +345,7 @@ document / code-ref rows and a `SyncRun` summary, mutating nothing; `--json` emi
 the run. (Git mode materialises the default branch in a throwaway worktree torn
 down in a finally — see DEMO-031.)
 **How to observe.** `cdmon sync --mode local --json --config demo/config/cdmon`
-prints the `SyncRun` (4 documents, 7 code refs, fully synced); the working tree is
+prints the `SyncRun` (8 documents, 11 code refs, fully synced); the working tree is
 untouched.
 Features: FEAT-CLI-012, FEAT-CONFIGV2-012, FEAT-SERVER-018
 
@@ -841,7 +842,7 @@ single-commit fixture. `scripts/demo_as_git.py` materializes the committed
 project's evolution, mirroring `CHANGELOG.md`) plus a bare `file://` origin,
 fully offline and reproducibly (pinned git identity + a fixed commit date). The
 server then clones that origin on demand and surfaces the demo's documents +
-its pinned 80% coverage off the real default-branch tip — and the same holds
+its pinned 88.9% coverage off the real default-branch tip — and the same holds
 for synthetic one-/two-unit repos and a repo whose default branch is `trunk`,
 not `main`.
 **How to observe.** Run `python scripts/demo_as_git.py /tmp/demo-as-git` to build
@@ -870,7 +871,28 @@ and the `cdm:` front matter atop `demo/README.md`, then run
 `cdmon check --config demo/config/cdmon` (the README is reported in sync). It also
 shows in the console: open the `demo-taskflow` repo and the **README files**
 section appears under both Documents and Mapping. Tests:
-`tests/system/test_demo_e2e.py` (the demo's 4-document / 7-code-ref mapping incl.
+`tests/system/test_demo_e2e.py` (the demo's 8-document / 11-code-ref mapping incl.
 `readme`) and
 `tests/system/test_dogfood.py::test_dogfood_readme_is_a_monitored_user_guide_doc`.
 Features: FEAT-CONFIGV2-016
+
+### DEMO-058 — Tests are monitored too: the test→test-doc mirror
+**What it shows.** Test files are monitored exactly like source: the `tests`
+unit (`demo/config/cdmon/tests.yaml`, `dir-covered: [tests]`) maps every demo test
+file under `demo/tests/` to **exactly one** test-doc under `demo/test-docs/` (1:1),
+each an `eng-guide` document with a managed `symbols` region listing that file's
+`test_*` functions. It is the SAME machinery as source → docs (no engine change —
+a test file is just a `.py` file, K0): add/rename/remove a test and its test-doc
+drifts for a human to review (K5); `cdmon monitor --apply` heals it (K7). The unit
+is fully documented (100%), so the demo's only gap stays the deliberate
+`scheduler.py` SOURCE gap — note the symmetry that `scheduler.py`'s source is
+undocumented yet its tests are documented in `test-docs/test_scheduler.md`. cdmon
+dogfoods the same pattern on its own `tests/smoke/` boundary.
+**How to observe.** Inspect `demo/config/cdmon/tests.yaml` and the four
+`demo/test-docs/test_*.md` files, then run `cdmon check --config demo/config/cdmon`
+(the test-docs are reported in sync) and `cdmon coverage --config demo/config/cdmon`
+(the `tests` unit is 100%). It also shows in the console: open `demo-taskflow` and
+the **Test docs** section appears under Documents, Drift, and Mapping. Tests:
+`tests/system/test_demo_e2e.py` (the four `test-*` docs in the 8-document mapping)
+and `tests/system/test_testdoc_mirror.py` (the mirror's engine-level contract).
+Features: FEAT-CONFIGV2-017

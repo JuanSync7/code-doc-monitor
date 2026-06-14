@@ -1,0 +1,42 @@
+---
+# Frontmatter (REQUIRED): this unit's identity + provenance. `unit` MUST match the
+# file stem (K8).
+cdmon-config-version: "2.0.0"
+unit: tests
+title: "code-doc-monitor test suite (smoke boundary)"
+owner: cdmon-team
+created: "2026-06-13"
+updated: "2026-06-13"
+---
+# The test→test-doc MIRROR (FEAT-CONFIGV2-017). Tests are just `.py` files, so the
+# SAME machinery that syncs source → docs syncs tests → test-docs: a unit whose
+# `code_refs` point at `tests/**` and whose documents live under a top-level
+# `test-docs/` directory. cdmon dogfoods this on its own SMOKE boundary — a small,
+# stable slice — so the maintenance tax (every test edit drifts its test-doc) and
+# the coverage impact stay bounded. Reheal exactly like any doc:
+# `cdmon monitor --apply`.
+
+# This unit's coverage scope: the smoke boundary's `.py` files.
+dir-covered:
+  - tests/smoke
+
+source-files-format:
+  - ".py"
+
+# One test-doc per smoke test file (1:1), each tracked against the test file's
+# `test_*` functions via a managed `symbols` region — engineering docs (eng-guide
+# surfaces ALL symbols, incl. private helpers, which is the honest test catalog).
+documents:
+  - id: test-smoke-boundaries
+    path: test-docs/smoke/test_boundaries.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: tests/smoke/test_boundaries.py
+
+  - id: test-smoke-smoke
+    path: test-docs/smoke/test_smoke.md
+    audience: eng-guide
+    region_keys: ["symbols"]
+    code_refs:
+      - path: tests/smoke/test_smoke.py

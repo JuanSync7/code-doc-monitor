@@ -6,12 +6,12 @@ ref: null
 generated-by: cdmon rpt
 ---
 summary:
-  scanned_files: 7
-  documented_files: 4
-  waived_files: 2
+  scanned_files: 12
+  documented_files: 8
+  waived_files: 3
   ignored_files: 0
   uncovered_files: 1
-  percent: 80.00
+  percent: 88.89
 units:
   - unit: core
     file: core.yaml
@@ -24,6 +24,12 @@ units:
     file: io.yaml
     scanned: 3
     documented: 2
+    percent: 100.00
+    uncovered: []
+  - unit: tests
+    file: tests.yaml
+    scanned: 5
+    documented: 4
     percent: 100.00
     uncovered: []
 undocumented:
