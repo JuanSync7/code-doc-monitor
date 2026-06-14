@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { ApiError, apiClient, type RecordFilters } from "../api/client";
 import { useApi } from "../hooks/useApi";
 import SyncControls, { type SyncControlsApi } from "../components/SyncControls";
-import { partitionReadme } from "../lib/grouping";
+import { partitionDocs } from "../lib/grouping";
 import type {
   ApplyFixResponse,
   Audience,
@@ -410,9 +410,10 @@ export function RepoDetail({ api = apiClient, repoId: repoIdProp }: RepoDetailPr
         <p>No records match these filters.</p>
       ) : (
         (() => {
-          // README / narrative-doc drift is shown in its OWN section, separate
-          // from the engineering timeline (FEAT-CONFIGV2-016).
-          const { main, readme } = partitionReadme(
+          // README / narrative-doc drift and TEST DOC drift are each shown in
+          // their OWN section, separate from the engineering timeline
+          // (FEAT-CONFIGV2-016 + test docs).
+          const { main, readme, tests } = partitionDocs(
             state.data.records,
             (r) => r.doc_path,
           );
@@ -430,6 +431,15 @@ export function RepoDetail({ api = apiClient, repoId: repoIdProp }: RepoDetailPr
                   <table>
                     {recordsHead}
                     <tbody>{renderRecordRows(readme)}</tbody>
+                  </table>
+                </div>
+              ) : null}
+              {tests.length > 0 ? (
+                <div className="drift-tests panel">
+                  <h2>Test docs</h2>
+                  <table>
+                    {recordsHead}
+                    <tbody>{renderRecordRows(tests)}</tbody>
                   </table>
                 </div>
               ) : null}

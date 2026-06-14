@@ -22,6 +22,7 @@ import {
   readmeEditableDoc,
   storedConfigEdits,
   syncRunLocal,
+  testDocEditableDoc,
 } from "../test/fixtures";
 
 function fakeApi(overrides: Partial<MappingApi> = {}): MappingApi {
@@ -180,6 +181,23 @@ describe("Mapping page", () => {
     const readmeRow = within(section).getByRole("row", { name: /readme/i });
     expect(readmeRow).toHaveTextContent("README.md");
     expect(readmeRow).toHaveTextContent("user-guide");
+  });
+
+  it("lists test docs in their OWN mapping section", async () => {
+    const tree: EditableConfigTree = {
+      ...editableTree,
+      documents: [...editableTree.documents, testDocEditableDoc],
+    };
+    renderMapping(fakeApi({ configEditable: async () => tree }));
+
+    // The engineering docs stay in the main "Documents" section…
+    await screen.findByRole("row", { name: /guide\/getting-started/ });
+    // …and the test doc under a separate "Test docs" section.
+    const heading = await screen.findByRole("heading", { name: /test docs/i });
+    const section = heading.closest("div")!;
+    const testRow = within(section).getByRole("row", { name: /testdoc-engine/ });
+    expect(testRow).toHaveTextContent("test-docs/test_engine.md");
+    expect(testRow).toHaveTextContent("eng-guide");
   });
 });
 

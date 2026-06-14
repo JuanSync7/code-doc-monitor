@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { apiClient } from "../api/client";
 import { useApi } from "../hooks/useApi";
 import SyncControls, { type SyncControlsApi } from "../components/SyncControls";
-import { partitionReadme } from "../lib/grouping";
+import { partitionDocs } from "../lib/grouping";
 import type { ConfigDocumentTree } from "../types";
 
 /** The slice of the API this page needs — fakeable in tests (no network). The
@@ -113,9 +113,12 @@ export function Documents({ api = apiClient, repoId: repoIdProp }: DocumentsProp
     );
   }
 
-  // README / narrative docs are surfaced as their OWN section, separate from the
-  // engineering/API documents (FEAT-CONFIGV2-016).
-  const { main, readme } = partitionReadme(state.data, (t) => t.document.path);
+  // README / narrative docs and TEST DOCS are surfaced as their OWN sections,
+  // separate from the engineering/API documents (FEAT-CONFIGV2-016 + test docs).
+  const { main, readme, tests } = partitionDocs(
+    state.data,
+    (t) => t.document.path,
+  );
 
   return (
     <section>
@@ -137,6 +140,17 @@ export function Documents({ api = apiClient, repoId: repoIdProp }: DocumentsProp
           <h2>README files</h2>
           <DocumentsTable
             trees={readme}
+            expanded={expanded}
+            onToggle={toggleExpanded}
+          />
+        </div>
+      ) : null}
+
+      {tests.length > 0 ? (
+        <div className="documents-tests panel">
+          <h2>Test docs</h2>
+          <DocumentsTable
+            trees={tests}
             expanded={expanded}
             onToggle={toggleExpanded}
           />
