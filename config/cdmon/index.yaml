@@ -3,7 +3,7 @@
 cdmon-config-version: "2.0.0"
 repo: "code-doc-monitor"
 generated-by: cdmon
-updated: "2026-06-07T11:00:59.468803+00:00"
+updated: "2026-06-13T03:21:56.707870+00:00"
 ---
 # code-doc-monitor's own configuration (dir layout) — it monitors ITS OWN source
 # against its own engineering docs (dogfooding the CONFIG-V2 multi-file layout).
@@ -66,16 +66,20 @@ coverage:
       reason: "EPIC R source index; documented in feature-doc/, api doc owned by R-07 cdmon wiki"
     - path: "code_doc_monitor/wiki.py"
       reason: "EPIC R wiki regeneration; documented in feature-doc/, api doc owned by R-08 cdmon wiki"
+    - path: "tests/smoke/__init__.py"
+      reason: "empty test-package marker; no documentable surface (FEAT-CONFIGV2-017 test-doc mirror covers the smoke test modules themselves)"
 
 # REQUIRED index of every unit file in this directory (stable, ordered). Every
 # *.yaml unit on disk MUST be listed (run `cdmon index` to regenerate). The three
-# nested units use Z-01a deepest-wins attribution: a file under
+# code_doc_monitor units use Z-01a deepest-wins attribution: a file under
 # code_doc_monitor/agent belongs to the `agent` unit, one under
-# code_doc_monitor/server to `server`, and the rest to `core`.
+# code_doc_monitor/server to `server`, and the rest to `core`. The `tests` unit
+# covers tests/smoke (the test→test-doc mirror, FEAT-CONFIGV2-017).
 units:
   - file: agent.yaml
   - file: core.yaml
   - file: server.yaml
+  - file: tests.yaml
 # Pointers to the ignore + doc-style files.
 ignore: ignore.yaml
 doc-style: doc-style.yaml
